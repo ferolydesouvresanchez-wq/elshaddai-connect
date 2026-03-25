@@ -75,7 +75,7 @@ module.exports = function(db) {
 
   // PUT /api/auth/me
   router.put('/me', authenticate, (req, res) => {
-    const { firstName, lastName, email, phone, lang, profileVisibility } = req.body;
+    const { firstName, lastName, email, phone, lang, profileVisibility, avatar } = req.body;
     const updates = [];
     const values = [];
 
@@ -85,6 +85,7 @@ module.exports = function(db) {
     if (phone !== undefined) { updates.push('phone = ?'); values.push(phone); }
     if (lang) { updates.push('lang = ?'); values.push(lang); }
     if (profileVisibility) { updates.push('profileVisibility = ?'); values.push(profileVisibility); }
+    if (avatar !== undefined) { updates.push('avatar = ?'); values.push(avatar); }
 
     if (updates.length === 0) return res.status(400).json({ error: 'No fields to update' });
 

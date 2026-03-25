@@ -1487,39 +1487,40 @@ const ProfileModal = ({ isOpen, onClose, t, currentUser, data, updateData, setCu
     if (!file) return;
     if (file.size > 2 * 1024 * 1024) { setErr('Max 2MB'); return; }
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       const avatar = reader.result;
-      const updatedUsers = (data.users||[]).map(u => u.id===currentUser.id ? {...u, avatar} : u);
-      updateData('users', updatedUsers);
-      const updatedUser = {...currentUser, avatar};
-      setCurrentUser(updatedUser);
-      storage.set('church_session', updatedUser);
-      setMsg(t.auth.profileUpdated);
+      try {
+        const updatedUser = await api.put('/auth/me', { avatar });
+        setCurrentUser(updatedUser);
+        storage.set('church_session', updatedUser);
+        setMsg(t.auth.profileUpdated);
+      } catch (e) { setErr('Failed to save photo'); }
     };
     reader.readAsDataURL(file);
   };
 
-  const removePhoto = () => {
-    const updatedUsers = (data.users||[]).map(u => u.id===currentUser.id ? {...u, avatar:null} : u);
-    updateData('users', updatedUsers);
-    const updatedUser = {...currentUser, avatar:null};
-    setCurrentUser(updatedUser);
-    storage.set('church_session', updatedUser);
+  const removePhoto = async () => {
+    try {
+      const updatedUser = await api.put('/auth/me', { avatar: null });
+      setCurrentUser(updatedUser);
+      storage.set('church_session', updatedUser);
+    } catch (e) { setErr('Failed to remove photo'); }
   };
 
-  const handleSaveProfile = () => {
+  const handleSaveProfile = async () => {
     setMsg(''); setErr('');
     if (!form.firstName || !form.lastName) { setErr(t.auth.fillRequired); return; }
-    const updatedUsers = (data.users||[]).map(u => u.id===currentUser.id ? {...u, firstName:form.firstName, lastName:form.lastName, email:form.email, phone:form.phone} : u);
-    updateData('users', updatedUsers);
-    if (currentUser.memberId) {
-      const updatedMembers = data.members.map(m => m.id===currentUser.memberId ? {...m, firstName:form.firstName, lastName:form.lastName, email:form.email, phone:form.phone} : m);
-      updateData('members', updatedMembers);
+    try {
+      const updatedUser = await api.put('/auth/me', {
+        firstName: form.firstName, lastName: form.lastName,
+        email: form.email || undefined, phone: form.phone || undefined,
+      });
+      setCurrentUser(updatedUser);
+      storage.set('church_session', updatedUser);
+      setMsg(t.auth.profileUpdated);
+    } catch (e) {
+      setErr(e.error || 'Failed to save profile');
     }
-    const updatedUser = {...currentUser, firstName:form.firstName, lastName:form.lastName, email:form.email, phone:form.phone};
-    setCurrentUser(updatedUser);
-    storage.set('church_session', updatedUser);
-    setMsg(t.auth.profileUpdated);
   };
 
   const handleChangePw = async () => {
