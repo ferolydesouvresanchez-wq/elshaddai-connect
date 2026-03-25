@@ -1522,18 +1522,17 @@ const ProfileModal = ({ isOpen, onClose, t, currentUser, data, updateData, setCu
     setMsg(t.auth.profileUpdated);
   };
 
-  const handleChangePw = () => {
+  const handleChangePw = async () => {
     setMsg(''); setErr('');
     if (!pwForm.oldPassword || !pwForm.newPassword) { setErr(t.auth.fillRequired); return; }
     if (pwForm.newPassword !== pwForm.confirmPassword) { setErr(t.auth.passwordMismatch); return; }
-    if (pwForm.oldPassword !== currentUser.password) { setErr(t.auth.invalidCredentials); return; }
-    const updatedUsers = (data.users||[]).map(u => u.id===currentUser.id ? {...u, password:pwForm.newPassword} : u);
-    updateData('users', updatedUsers);
-    const updatedUser = {...currentUser, password:pwForm.newPassword};
-    setCurrentUser(updatedUser);
-    storage.set('church_session', updatedUser);
-    setPwForm({ oldPassword:'', newPassword:'', confirmPassword:'' });
-    setMsg(t.auth.passwordChanged);
+    try {
+      await api.put('/auth/password', { currentPassword: pwForm.oldPassword, newPassword: pwForm.newPassword });
+      setPwForm({ oldPassword:'', newPassword:'', confirmPassword:'' });
+      setMsg(t.auth.passwordChanged);
+    } catch (err) {
+      setErr(err.error || t.auth.invalidCredentials);
+    }
   };
 
   if (!isOpen) return null;
