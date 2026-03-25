@@ -1,0 +1,9 @@
+node_modules/
+server/db/elshaddai.db
+server/db/elshaddai.db-wal
+server/db/elshaddai.db-shm
+server/uploads/
+.env
+*.log
+.DS_Store
+Thumbs.db

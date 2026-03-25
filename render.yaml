@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: elshaddai-connect
+    runtime: node
+    buildCommand: npm install
+    startCommand: node server/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+    disk:
+      name: elshaddai-data
+      mountPath: /opt/render/project/src/server/db
+      sizeGB: 1

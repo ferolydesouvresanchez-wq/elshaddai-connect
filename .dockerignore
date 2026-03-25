@@ -1,0 +1,11 @@
+node_modules
+server/db/*.db
+server/db/*.db-wal
+server/db/*.db-shm
+server/uploads/*
+.claude
+.git
+.env
+generate-icons.js
+server.ps1
+*.log
