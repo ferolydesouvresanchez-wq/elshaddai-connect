@@ -43,6 +43,8 @@ app.use('/api/stars', require('./routes/stars')(db));
 app.use('/api/notifications', require('./routes/notifications')(db));
 app.use('/api/users', require('./routes/users')(db));
 app.use('/api/community', require('./routes/community')(db));
+app.use('/api/messages', require('./routes/messages')(db));
+app.use('/api/settings', require('./routes/settings')(db));
 
 // Health check
 app.get('/api/health', (req, res) => {

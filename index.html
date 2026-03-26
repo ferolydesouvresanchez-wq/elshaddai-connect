@@ -5484,6 +5484,10 @@ const THEMES = {
   teal: { primary:'#14B8A6', primaryLight:'#2DD4BF', primaryDark:'#0D9488', accent:'rgba(20,184,166,', bg900:'#0f1f1d', bg800:'#1a2f2c', bg700:'#2a3f3b', name:'Teal' },
   pink: { primary:'#EC4899', primaryLight:'#F472B6', primaryDark:'#DB2777', accent:'rgba(236,72,153,', bg900:'#1a1018', bg800:'#2d1b28', bg700:'#3a2535', name:'Pink' },
   orange: { primary:'#F97316', primaryLight:'#FB923C', primaryDark:'#EA580C', accent:'rgba(249,115,22,', bg900:'#1a1510', bg800:'#2d231b', bg700:'#3a3025', name:'Orange' },
+  white: { primary:'#6B7280', primaryLight:'#9CA3AF', primaryDark:'#4B5563', accent:'rgba(107,114,128,', bg900:'#f3f4f6', bg800:'#ffffff', bg700:'#e5e7eb', name:'White', isLight:true },
+  gray: { primary:'#9CA3AF', primaryLight:'#D1D5DB', primaryDark:'#6B7280', accent:'rgba(156,163,175,', bg900:'#1f2937', bg800:'#374151', bg700:'#4b5563', name:'Gray' },
+  indigo: { primary:'#6366F1', primaryLight:'#818CF8', primaryDark:'#4F46E5', accent:'rgba(99,102,241,', bg900:'#1a1630', bg800:'#2d2548', bg700:'#3a3560', name:'Indigo' },
+  cyan: { primary:'#06B6D4', primaryLight:'#22D3EE', primaryDark:'#0891B2', accent:'rgba(6,182,212,', bg900:'#0f1e22', bg800:'#1a2e35', bg700:'#2a3e45', name:'Cyan' },
 };
 
 const applyTheme = (themeKey) => {
@@ -5496,6 +5500,25 @@ const applyTheme = (themeKey) => {
   if (themeKey === 'gold') return; // gold is the default, no overrides needed
   const style = document.createElement('style');
   style.id = 'theme-overrides';
+  const lightOverrides = th.isLight ? `
+    .text-white { color: #1f2937 !important; }
+    .text-gray-300, .text-gray-400 { color: #4b5563 !important; }
+    .text-gray-500 { color: #6b7280 !important; }
+    .text-gray-600 { color: #9ca3af !important; }
+    .text-dark-900 { color: #1f2937 !important; }
+    .divide-dark-700 > * + * { border-color: #e5e7eb !important; }
+    .border-dark-600 { border-color: #d1d5db !important; }
+    .border-dark-500 { border-color: #d1d5db !important; }
+    .table-row:hover { background: #f9fafb !important; }
+    .stat-card { color: white !important; }
+    .stat-card .text-white { color: white !important; }
+    .stat-card .text-white\\/80 { color: rgba(255,255,255,0.8) !important; }
+    .stat-card .text-white\\/50 { color: rgba(255,255,255,0.5) !important; }
+    .stat-card .text-white\\/40 { color: rgba(255,255,255,0.4) !important; }
+    input, select, textarea { color: #1f2937 !important; background: #f3f4f6 !important; border-color: #d1d5db !important; }
+    input::placeholder, textarea::placeholder { color: #9ca3af !important; }
+    .badge { color: white !important; }
+  ` : '';
   style.textContent = `
     body { background: ${th.bg900}; }
     .sidebar { background: linear-gradient(180deg, ${th.bg900} 0%, ${th.bg900} 100%); }
@@ -5510,14 +5533,15 @@ const applyTheme = (themeKey) => {
     .bg-dark-900 { background: ${th.bg900} !important; }
     .bg-dark-800 { background: ${th.bg800} !important; }
     .bg-dark-700 { background: ${th.bg700} !important; }
-    .card { background: ${th.bg800} !important; }
-    .border-dark-700 { border-color: ${th.bg700} !important; }
+    .card { background: ${th.bg800} !important; ${th.isLight ? 'border: 1px solid #e5e7eb !important;' : ''} }
+    .border-dark-700 { border-color: ${th.isLight ? '#e5e7eb' : th.bg700} !important; }
     .nav-item.active { border-left-color: ${th.primary} !important; background: ${th.accent}0.15) !important; }
     .nav-item:hover { background: ${th.accent}0.1) !important; }
     .glow { box-shadow: 0 0 40px ${th.accent}0.3) !important; }
     .auth-card { background: ${th.bg800} !important; }
     .auth-bg { background: linear-gradient(135deg, ${th.bg900} 0%, ${th.bg800} 50%, ${th.bg900} 100%) !important; }
     input, select, textarea { background: ${th.bg700} !important; }
+    ${lightOverrides}
   `;
   document.head.appendChild(style);
 };
@@ -5528,25 +5552,29 @@ const applyTheme = (themeKey) => {
 const ThemeModal = ({ isOpen, onClose, t, currentTheme, setTheme }) => {
   if (!isOpen) return null;
   const themes = [
-    { key:'gold', color:'#C9A84C', label: t.common.goldTheme || 'Gold' },
-    { key:'blue', color:'#3B82F6', label: t.common.blueTheme || 'Blue' },
-    { key:'green', color:'#10B981', label: t.common.greenTheme || 'Green' },
-    { key:'purple', color:'#8B5CF6', label: t.common.purpleTheme || 'Purple' },
+    { key:'gold', color:'#C9A84C', label: 'Gold' },
+    { key:'blue', color:'#3B82F6', label: 'Blue' },
+    { key:'green', color:'#10B981', label: 'Green' },
+    { key:'purple', color:'#8B5CF6', label: 'Purple' },
     { key:'red', color:'#EF4444', label: 'Red' },
     { key:'teal', color:'#14B8A6', label: 'Teal' },
     { key:'pink', color:'#EC4899', label: 'Pink' },
     { key:'orange', color:'#F97316', label: 'Orange' },
+    { key:'white', color:'#6B7280', label: 'White', ring:'#d1d5db' },
+    { key:'gray', color:'#9CA3AF', label: 'Gray' },
+    { key:'indigo', color:'#6366F1', label: 'Indigo' },
+    { key:'cyan', color:'#06B6D4', label: 'Cyan' },
   ];
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={t.common.themeSettings} maxWidth="max-w-sm">
       <p className="text-sm text-gray-400 mb-4">{t.common.colorScheme}</p>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         {themes.map(th => (
           <button key={th.key} onClick={()=>{setTheme(th.key); onClose();}}
-            className={`p-4 rounded-xl border-2 transition-all flex flex-col items-center gap-2 ${currentTheme===th.key?'border-current shadow-lg':'border-dark-600 hover:border-dark-500'}`}
+            className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center gap-1.5 ${currentTheme===th.key?'border-current shadow-lg':'border-dark-600 hover:border-dark-500'}`}
             style={currentTheme===th.key?{borderColor:th.color}:{}}>
-            <div className="w-10 h-10 rounded-full" style={{background:`linear-gradient(135deg, ${th.color}, ${th.color}88)`}}/>
-            <span className="text-sm font-medium" style={currentTheme===th.key?{color:th.color}:{}}>{th.label}</span>
+            <div className="w-8 h-8 rounded-full border" style={{background:`linear-gradient(135deg, ${th.color}, ${th.color}88)`, borderColor: th.ring || 'transparent'}}/>
+            <span className="text-xs font-medium" style={currentTheme===th.key?{color:th.color}:{}}>{th.label}</span>
           </button>
         ))}
       </div>
@@ -5695,7 +5723,7 @@ const CertificateModal = ({ isOpen, onClose, t, data }) => {
 // =====================================================================
 const MessagesPage = ({ data, updateData, t, currentUser }) => {
   const ts = t.social || {};
-  const [conversations, setConversations] = useState(data.messages || []);
+  const [conversations, setConversations] = useState([]);
   const [activeChat, setActiveChat] = useState(null);
   const [msgText, setMsgText] = useState('');
   const [showNewChat, setShowNewChat] = useState(false);
@@ -5704,14 +5732,18 @@ const MessagesPage = ({ data, updateData, t, currentUser }) => {
   const [groupName, setGroupName] = useState('');
   const [selectedUsers, setSelectedUsers] = useState([]);
 
-  // Sync from data
-  useEffect(() => { setConversations(data.messages || []); }, [data.messages]);
+  // Load conversations from API
+  const loadConversations = async () => {
+    try {
+      const res = await api.get('/messages/conversations');
+      setConversations(Array.isArray(res) ? res : []);
+    } catch (e) { console.error('Load conversations error:', e); }
+  };
+  useEffect(() => { loadConversations(); }, []);
 
   const allUsers = (data.users || []).filter(u => u.id !== currentUser?.id && u.active !== 0 && u.status === 'approved');
 
-  const myConversations = conversations.filter(c =>
-    (c.participants || []).includes(currentUser?.id)
-  ).sort((a, b) => {
+  const myConversations = [...conversations].sort((a, b) => {
     const aLast = (a.chatMessages || []).slice(-1)[0]?.createdAt || a.createdAt || '';
     const bLast = (b.chatMessages || []).slice(-1)[0]?.createdAt || b.createdAt || '';
     return bLast.localeCompare(aLast);
@@ -5746,79 +5778,65 @@ const MessagesPage = ({ data, updateData, t, currentUser }) => {
     return (conv.chatMessages || []).filter(m => m.senderId !== currentUser?.id && !m.readBy?.includes(currentUser?.id)).length;
   };
 
-  const createConversation = (userId) => {
-    // Check if 1-on-1 already exists
-    const existing = myConversations.find(c => {
-      const parts = c.participants || [];
-      return parts.length === 2 && parts.includes(userId) && parts.includes(currentUser?.id) && !c.name;
-    });
-    if (existing) { setActiveChat(existing.id); setShowNewChat(false); return; }
-    const newConv = {
-      id: Date.now().toString(),
-      participants: [currentUser?.id, userId],
-      chatMessages: [],
-      createdAt: new Date().toISOString(),
-    };
-    const updated = [...conversations, newConv];
-    updateData('messages', updated);
-    setActiveChat(newConv.id);
-    setShowNewChat(false);
-    setSearchUser('');
+  const createConversation = async (userId) => {
+    try {
+      const conv = await api.post('/messages/conversations', { participants: [userId] });
+      setConversations(prev => {
+        const exists = prev.find(c => c.id === conv.id);
+        return exists ? prev : [...prev, conv];
+      });
+      setActiveChat(conv.id);
+      setShowNewChat(false);
+      setSearchUser('');
+    } catch (e) { console.error('Create conversation error:', e); }
   };
 
-  const createGroupChat = () => {
+  const createGroupChat = async () => {
     if (selectedUsers.length === 0) return;
-    const newConv = {
-      id: Date.now().toString(),
-      name: groupName || selectedUsers.map(id => (data.users || []).find(u => u.id === id)?.firstName || '').join(', '),
-      participants: [currentUser?.id, ...selectedUsers],
-      chatMessages: [],
-      createdAt: new Date().toISOString(),
-      isGroup: true,
-    };
-    const updated = [...conversations, newConv];
-    updateData('messages', updated);
-    setActiveChat(newConv.id);
-    setShowNewChat(false);
-    setSelectedUsers([]);
-    setGroupName('');
+    try {
+      const conv = await api.post('/messages/conversations', {
+        name: groupName || undefined,
+        participants: selectedUsers,
+        isGroup: true,
+      });
+      setConversations(prev => [...prev, conv]);
+      setActiveChat(conv.id);
+      setShowNewChat(false);
+      setSelectedUsers([]);
+      setGroupName('');
+    } catch (e) { console.error('Create group error:', e); }
   };
 
-  const sendMessage = () => {
+  const sendMessage = async () => {
     if (!msgText.trim() || !activeChat) return;
-    const updated = conversations.map(c => {
-      if (c.id !== activeChat) return c;
-      return { ...c, chatMessages: [...(c.chatMessages || []), {
-        id: Date.now().toString(),
-        senderId: currentUser?.id,
-        text: msgText.trim(),
-        createdAt: new Date().toISOString(),
-        readBy: [currentUser?.id],
-      }]};
-    });
-    updateData('messages', updated);
+    const text = msgText.trim();
     setMsgText('');
+    try {
+      const msg = await api.post(`/messages/conversations/${activeChat}/messages`, { text });
+      setConversations(prev => prev.map(c => {
+        if (c.id !== activeChat) return c;
+        return { ...c, chatMessages: [...(c.chatMessages || []), msg] };
+      }));
+    } catch (e) { console.error('Send message error:', e); }
   };
 
-  const addPeopleToChat = (userId) => {
-    const updated = conversations.map(c => {
-      if (c.id !== activeChat) return c;
-      if ((c.participants || []).includes(userId)) return c;
-      return { ...c, participants: [...(c.participants || []), userId], isGroup: true,
-        name: c.name || getConvName(c),
-      };
-    });
-    updateData('messages', updated);
-    setShowAddPeople(false);
+  const addPeopleToChat = async (userId) => {
+    try {
+      await api.post(`/messages/conversations/${activeChat}/participants`, { userId });
+      setConversations(prev => prev.map(c => {
+        if (c.id !== activeChat) return c;
+        return { ...c, participants: [...(c.participants || []), userId], isGroup: true };
+      }));
+      setShowAddPeople(false);
+    } catch (e) { console.error('Add people error:', e); }
   };
 
-  const leaveChat = (convId) => {
-    const updated = conversations.map(c => {
-      if (c.id !== convId) return c;
-      return { ...c, participants: (c.participants || []).filter(id => id !== currentUser?.id) };
-    });
-    updateData('messages', updated);
-    if (activeChat === convId) setActiveChat(null);
+  const leaveChat = async (convId) => {
+    try {
+      await api.del(`/messages/conversations/${convId}/leave`);
+      setConversations(prev => prev.filter(c => c.id !== convId));
+      if (activeChat === convId) setActiveChat(null);
+    } catch (e) { console.error('Leave chat error:', e); }
   };
 
   const activeChatData = conversations.find(c => c.id === activeChat);
@@ -5834,13 +5852,13 @@ const MessagesPage = ({ data, updateData, t, currentUser }) => {
     if (!conv) return;
     const unread = (conv.chatMessages || []).some(m => m.senderId !== currentUser?.id && !m.readBy?.includes(currentUser?.id));
     if (unread) {
-      const updated = conversations.map(c => {
+      api.put(`/messages/conversations/${activeChat}/read`).catch(() => {});
+      setConversations(prev => prev.map(c => {
         if (c.id !== activeChat) return c;
         return { ...c, chatMessages: (c.chatMessages || []).map(m => ({
           ...m, readBy: m.readBy?.includes(currentUser?.id) ? m.readBy : [...(m.readBy || []), currentUser?.id]
         }))};
-      });
-      updateData('messages', updated);
+      }));
     }
   }, [activeChat]);
 
@@ -6127,8 +6145,15 @@ function App() {
   useEffect(()=>{ storage.set('church_lang', lang); }, [lang]);
   useEffect(()=>{ storage.set('church_theme', themeKey); applyTheme(themeKey); }, [themeKey]);
 
+  // Keys that persist to backend settings API
+  const PERSISTED_SETTINGS = ['bannerPhotos', 'userPermissions', 'rolePermissions', 'eventRsvps'];
+
   const updateData = useCallback((key, value) => {
     setData(prev => ({ ...prev, [key]: value }));
+    // Persist certain keys to backend
+    if (PERSISTED_SETTINGS.includes(key)) {
+      api.put(`/settings/${key}`, { value }).catch(e => console.error('Save setting error:', e));
+    }
   }, []);
 
   // Validate existing token on mount
@@ -6196,12 +6221,13 @@ function App() {
           stars: Array.isArray(rankingRes) ? rankingRes : [],
         }));
 
-        // Load community data
-        const [pastorRes, prayerRes, announcementsRes, fundraisingRes] = await Promise.all([
+        // Load community data + persisted settings
+        const [pastorRes, prayerRes, announcementsRes, fundraisingRes, settingsRes] = await Promise.all([
           api.get('/community/pastor-messages').catch(()=>[]),
           api.get('/community/prayer-requests').catch(()=>[]),
           api.get('/community/announcements').catch(()=>[]),
           api.get('/community/fundraising').catch(()=>[]),
+          api.get('/settings').catch(()=>({})),
         ]);
         setData(prev => ({
           ...prev,
@@ -6209,6 +6235,10 @@ function App() {
           prayerRequests: Array.isArray(prayerRes) ? prayerRes : [],
           announcements: Array.isArray(announcementsRes) ? announcementsRes : [],
           fundraisingCampaigns: Array.isArray(fundraisingRes) ? fundraisingRes : [],
+          bannerPhotos: settingsRes.bannerPhotos || [],
+          userPermissions: settingsRes.userPermissions || {},
+          rolePermissions: settingsRes.rolePermissions || prev.rolePermissions,
+          eventRsvps: settingsRes.eventRsvps || [],
         }));
       } catch (err) {
         console.error('Data load error:', err);

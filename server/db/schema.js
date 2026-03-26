@@ -385,6 +385,49 @@ function initDatabase() {
       UNIQUE(eventId, userId)
     );
 
+    -- Conversations (messaging)
+    CREATE TABLE IF NOT EXISTS conversations (
+      id TEXT PRIMARY KEY,
+      name TEXT,
+      isGroup INTEGER DEFAULT 0,
+      createdBy TEXT REFERENCES users(id),
+      createdAt TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Conversation Participants
+    CREATE TABLE IF NOT EXISTS conversation_participants (
+      id TEXT PRIMARY KEY,
+      conversationId TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+      userId TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      joinedAt TEXT DEFAULT (datetime('now')),
+      UNIQUE(conversationId, userId)
+    );
+
+    -- Chat Messages
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id TEXT PRIMARY KEY,
+      conversationId TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+      senderId TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      text TEXT NOT NULL,
+      createdAt TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Chat Message Read Status
+    CREATE TABLE IF NOT EXISTS chat_message_reads (
+      messageId TEXT NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,
+      userId TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      readAt TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY(messageId, userId)
+    );
+
+    -- App Settings (key-value store for bannerPhotos, userPermissions, etc.)
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updatedBy TEXT REFERENCES users(id),
+      updatedAt TEXT DEFAULT (datetime('now'))
+    );
+
     -- Community Hub Config
     CREATE TABLE IF NOT EXISTS hub_config (
       id TEXT PRIMARY KEY DEFAULT 'default',
@@ -419,6 +462,9 @@ function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_event_rsvps ON event_rsvps(eventId);
     CREATE INDEX IF NOT EXISTS idx_members_birthdate ON members(birthDate);
     CREATE INDEX IF NOT EXISTS idx_users_birthdate ON users(birthDate);
+    CREATE INDEX IF NOT EXISTS idx_conv_participants ON conversation_participants(userId);
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_conv ON chat_messages(conversationId);
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_created ON chat_messages(createdAt);
   `);
 
   // Migration: add status column if missing
