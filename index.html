@@ -1865,11 +1865,11 @@ const AdminDashboard = ({ data, t, currentUser }) => {
           {recentMembers.length === 0
             ? <EmptyState icon="users" message={t.common.noData}/>
             : <div className="space-y-3">
-                {recentMembers.map(m=>(
+                {recentMembers.map(m=>{
+                  const memberUser = (data.users||[]).find(u => u.id === m.userId);
+                  return (
                   <div key={m.id} className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-gold-500 to-gold-700 flex items-center justify-center text-dark-900 text-sm font-bold flex-shrink-0">
-                      {m.firstName[0]}{m.lastName[0]}
-                    </div>
+                    <UserAvatar user={memberUser || {firstName:m.firstName, lastName:m.lastName}} size={36}/>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-semibold text-white truncate">{m.firstName} {m.lastName}</div>
                       <div className="text-xs text-gray-500">{t.members.memberSince} {formatDate(m.joinDate)}</div>
@@ -1878,7 +1878,7 @@ const AdminDashboard = ({ data, t, currentUser }) => {
                       {m.status==='active'?t.members.active:m.status==='visitor'?t.members.visitor:t.members.inactive}
                     </span>
                   </div>
-                ))}
+                  );})}
               </div>
           }
         </div>

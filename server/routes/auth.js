@@ -96,6 +96,19 @@ module.exports = function(db) {
     values.push(req.user.id);
 
     db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+
+    // Sync member record with user profile
+    const memberUpdates = [];
+    const memberValues = [];
+    if (firstName) { memberUpdates.push('firstName = ?'); memberValues.push(firstName); }
+    if (lastName) { memberUpdates.push('lastName = ?'); memberValues.push(lastName); }
+    if (email) { memberUpdates.push('email = ?'); memberValues.push(email); }
+    if (phone !== undefined) { memberUpdates.push('phone = ?'); memberValues.push(phone); }
+    if (memberUpdates.length > 0) {
+      memberValues.push(req.user.id);
+      db.prepare(`UPDATE members SET ${memberUpdates.join(', ')} WHERE userId = ?`).run(...memberValues);
+    }
+
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
     const { password: _, ...userData } = user;
     res.json(userData);
