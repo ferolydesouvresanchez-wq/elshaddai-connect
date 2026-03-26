@@ -4795,10 +4795,13 @@ const Accounts = ({ data, updateData, t, currentUser }) => {
     setConfirm(null);
   };
 
-  const handleRoleChange = () => {
+  const handleRoleChange = async () => {
     if (!roleModal) return;
-    const updated = users.map(u => u.id === roleModal.id ? { ...u, role: selectedRole, assignedGroupId: selectedRole === 'ministry_leader' ? (selectedGroup || null) : null } : u);
-    updateData('users', updated);
+    try {
+      await api.put('/users/' + roleModal.id, { role: selectedRole });
+      const updated = users.map(u => u.id === roleModal.id ? { ...u, role: selectedRole, assignedGroupId: selectedRole === 'ministry_leader' ? (selectedGroup || null) : null } : u);
+      updateData('users', updated);
+    } catch (e) { console.error('Role change failed', e); }
     setRoleModal(null);
   };
 
@@ -4838,15 +4841,18 @@ const Accounts = ({ data, updateData, t, currentUser }) => {
     </div>
   );
 
-  const UserRow = ({ u, showActions = true }) => (
+  const UserRow = ({ u, showActions = true }) => {
+    const canEdit = isSuperAdmin(currentUser) && u.id !== currentUser.id && u.status !== 'pending';
+    return (
     <tr key={u.id} className="table-row">
       <td className="px-4 py-3">
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => canEdit && openRoleModal(u)}>
+          {u.avatar ? <img src={u.avatar} className="w-8 h-8 rounded-full object-cover flex-shrink-0"/> :
           <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${avatarColor(u.role)}`}>
             {u.firstName?.[0] || '?'}{u.lastName?.[0] || ''}
-          </div>
+          </div>}
           <div>
-            <div className="font-semibold text-white">{u.firstName} {u.lastName}</div>
+            <div className={`font-semibold text-white ${canEdit ? 'hover:text-gold-400 transition-colors' : ''}`}>{u.firstName} {u.lastName}</div>
             <VerificationBadges user={u} />
           </div>
         </div>
@@ -4885,7 +4891,7 @@ const Accounts = ({ data, updateData, t, currentUser }) => {
         </td>
       )}
     </tr>
-  );
+  );};
 
   const UserTable = ({ userList, showActions = true }) => (
     userList.length === 0
