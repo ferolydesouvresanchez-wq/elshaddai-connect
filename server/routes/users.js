@@ -9,8 +9,24 @@ module.exports = function(db) {
 
   // GET /api/users - List all users (admin)
   router.get('/', requireRole('superadmin', 'admin'), (req, res) => {
-    const users = db.prepare('SELECT id, username, email, firstName, lastName, role, phone, avatar, active, createdAt FROM users ORDER BY lastName').all();
+    const users = db.prepare('SELECT id, username, email, firstName, lastName, role, phone, avatar, status, active, createdAt FROM users ORDER BY lastName').all();
     res.json(users);
+  });
+
+  // PUT /api/users/:id/approve - Approve pending account (superadmin/admin)
+  router.put('/:id/approve', requireRole('superadmin', 'admin'), (req, res) => {
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    db.prepare("UPDATE users SET status = 'approved', updatedAt = datetime('now') WHERE id = ?").run(req.params.id);
+    res.json({ message: 'Account approved' });
+  });
+
+  // PUT /api/users/:id/reject - Reject pending account (superadmin/admin)
+  router.put('/:id/reject', requireRole('superadmin', 'admin'), (req, res) => {
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    db.prepare("UPDATE users SET status = 'rejected', updatedAt = datetime('now') WHERE id = ?").run(req.params.id);
+    res.json({ message: 'Account rejected' });
   });
 
   // GET /api/users/:id - Get user profile

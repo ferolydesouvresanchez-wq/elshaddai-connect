@@ -1149,7 +1149,9 @@ const AuthScreen = ({ t, lang, setLang, onLogin, data, updateData }) => {
       api.setToken(res.token);
       onLogin(res.user);
     } catch (err) {
-      setError(err.error || t.auth.invalidCredentials);
+      if (err.error === 'pending') { setMode('pending'); }
+      else if (err.error === 'rejected') { setError(err.message || 'Account rejected.'); }
+      else { setError(err.error || t.auth.invalidCredentials); }
     } finally {
       setLoading(false);
     }
@@ -1171,8 +1173,12 @@ const AuthScreen = ({ t, lang, setLang, onLogin, data, updateData }) => {
         address: form.address || undefined,
         birthDate: form.birthDate || undefined,
       });
-      api.setToken(res.token);
-      onLogin(res.user);
+      if (res.pending) {
+        setMode('pending');
+      } else {
+        api.setToken(res.token);
+        onLogin(res.user);
+      }
     } catch (err) {
       setError(err.error || 'Registration failed');
     } finally {
@@ -4766,15 +4772,21 @@ const Accounts = ({ data, updateData, t, currentUser }) => {
   const approvedUsers = users.filter(u => u.status === 'approved');
   const rejectedUsers = users.filter(u => u.status === 'rejected');
 
-  const handleApprove = (userId) => {
-    const updated = users.map(u => u.id === userId ? { ...u, status: 'approved' } : u);
-    updateData('users', updated);
+  const handleApprove = async (userId) => {
+    try {
+      await api.put('/users/' + userId + '/approve');
+      const updated = users.map(u => u.id === userId ? { ...u, status: 'approved' } : u);
+      updateData('users', updated);
+    } catch (e) { console.error('Approve failed', e); }
     setConfirm(null);
   };
 
-  const handleReject = (userId) => {
-    const updated = users.map(u => u.id === userId ? { ...u, status: 'rejected' } : u);
-    updateData('users', updated);
+  const handleReject = async (userId) => {
+    try {
+      await api.put('/users/' + userId + '/reject');
+      const updated = users.map(u => u.id === userId ? { ...u, status: 'rejected' } : u);
+      updateData('users', updated);
+    } catch (e) { console.error('Reject failed', e); }
     setConfirm(null);
   };
 

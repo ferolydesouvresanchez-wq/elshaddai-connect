@@ -25,6 +25,7 @@ function initDatabase() {
       profileVisibility TEXT DEFAULT 'public' CHECK(profileVisibility IN ('public','private')),
       birthDate TEXT,
       lang TEXT DEFAULT 'en',
+      status TEXT DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),
       active INTEGER DEFAULT 1,
       createdAt TEXT DEFAULT (datetime('now')),
       updatedAt TEXT DEFAULT (datetime('now'))
@@ -413,14 +414,22 @@ function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_users_birthdate ON users(birthDate);
   `);
 
+  // Migration: add status column if missing
+  const cols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
+  if (!cols.includes('status')) {
+    db.exec("ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected'))");
+    db.exec("UPDATE users SET status = 'approved'");
+    console.log('Migration: added status column to users, existing users set to approved');
+  }
+
   // Seed default admin user if no users exist
   const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
   if (userCount.count === 0) {
     const adminId = uuidv4();
     const hashedPassword = bcrypt.hashSync('admin123', 10);
     db.prepare(`
-      INSERT INTO users (id, username, email, password, firstName, lastName, role)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO users (id, username, email, password, firstName, lastName, role, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'approved')
     `).run(adminId, 'admin@elshaddai.com', 'admin@elshaddai.com', hashedPassword, 'Admin', 'Church', 'superadmin');
 
     // Create corresponding member record

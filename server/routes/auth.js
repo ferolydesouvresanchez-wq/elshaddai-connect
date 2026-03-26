@@ -20,6 +20,12 @@ module.exports = function(db) {
     if (!user || !bcrypt.compareSync(password, user.password)) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
+    if (user.status === 'pending') {
+      return res.status(403).json({ error: 'pending', message: 'Your account is pending approval by an administrator.' });
+    }
+    if (user.status === 'rejected') {
+      return res.status(403).json({ error: 'rejected', message: 'Your account has been rejected. Contact an administrator.' });
+    }
 
     const token = generateToken(user);
     const { password: _, ...userData } = user;
@@ -48,8 +54,8 @@ module.exports = function(db) {
     const id = uuidv4();
     const hashedPassword = bcrypt.hashSync(password, 10);
     db.prepare(`
-      INSERT INTO users (id, username, email, password, firstName, lastName, phone, birthDate, role)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'member')
+      INSERT INTO users (id, username, email, password, firstName, lastName, phone, birthDate, role, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'member', 'pending')
     `).run(id, username, email || null, hashedPassword, firstName, lastName, phone || null, birthDate || null);
 
     // Create member record
@@ -59,10 +65,7 @@ module.exports = function(db) {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', date('now'))
     `).run(memberId, id, firstName, lastName, email || null, phone || null, address || null, birthDate || null, gender || null);
 
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
-    const token = generateToken(user);
-    const { password: _, ...userData } = user;
-    res.status(201).json({ token, user: userData });
+    res.status(201).json({ pending: true, message: 'Account created. Awaiting administrator approval.' });
   });
 
   // GET /api/auth/me
