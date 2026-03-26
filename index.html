@@ -878,6 +878,7 @@ const EMPTY_DATA = {
     ministry_leader: ['dashboard','events','groups','feed','spaces','ranking','community','magazine','prayer_wall','announcements_page','pastor_word','fundraising_page'],
     member: ['dashboard','events','feed','spaces','ranking','community','magazine','prayer_wall','announcements_page','pastor_word','fundraising_page'],
   },
+  userPermissions: {},
 };
 
 function getDateOffset(days) {
@@ -4766,6 +4767,7 @@ const Accounts = ({ data, updateData, t, currentUser }) => {
   const [roleModal, setRoleModal] = useState(null);
   const [selectedRole, setSelectedRole] = useState('member');
   const [selectedGroup, setSelectedGroup] = useState('');
+  const [userPerms, setUserPerms] = useState([]);
   const users = data.users || [];
 
   const pendingUsers = users.filter(u => u.status === 'pending');
@@ -4801,13 +4803,20 @@ const Accounts = ({ data, updateData, t, currentUser }) => {
       await api.put('/users/' + roleModal.id, { role: selectedRole });
       const updated = users.map(u => u.id === roleModal.id ? { ...u, role: selectedRole, assignedGroupId: selectedRole === 'ministry_leader' ? (selectedGroup || null) : null } : u);
       updateData('users', updated);
+      // Save per-user permissions
+      const newUserPerms = { ...(data.userPermissions || {}), [roleModal.id]: userPerms };
+      updateData('userPermissions', newUserPerms);
     } catch (e) { console.error('Role change failed', e); }
     setRoleModal(null);
   };
 
   const openRoleModal = (user) => {
-    setSelectedRole(user.role || 'member');
+    const role = user.role || 'member';
+    setSelectedRole(role);
     setSelectedGroup(user.assignedGroupId || '');
+    const existingUserPerms = (data.userPermissions || {})[user.id];
+    const rp = data.rolePermissions || EMPTY_DATA.rolePermissions;
+    setUserPerms(existingUserPerms || rp[role] || rp.member || []);
     setRoleModal(user);
   };
 
@@ -4957,14 +4966,18 @@ const Accounts = ({ data, updateData, t, currentUser }) => {
         {tab === 'permissions' && isSA && <PermissionsPanel data={data} updateData={updateData} t={t}/>}
       </div>
 
-      {/* Role Assignment Modal */}
+      {/* Role & Permissions Assignment Modal */}
       {roleModal && (
         <div className="modal-backdrop" onClick={() => setRoleModal(null)}>
-          <div className="modal p-6 fade-in" onClick={e => e.stopPropagation()}>
+          <div className="modal p-6 fade-in max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-bold text-gold-400 mb-4">{t.auth.assignRole}: {roleModal.firstName} {roleModal.lastName}</h3>
             <div className="space-y-2 mb-4">
               {ROLES.map(role => (
-                <button key={role} onClick={() => setSelectedRole(role)}
+                <button key={role} onClick={() => {
+                  setSelectedRole(role);
+                  const rp = data.rolePermissions || EMPTY_DATA.rolePermissions;
+                  setUserPerms(rp[role] || rp.member || []);
+                }}
                   className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-colors ${selectedRole === role ? 'border-gold-500 bg-gold-500/10' : 'border-dark-600 hover:border-dark-500'}`}>
                   <span className={`badge ${getRoleBadgeClass(role)}`}>{getRoleLabel(role, t)}</span>
                   <span className="text-xs text-gray-500 flex-1 text-left">
@@ -4977,6 +4990,44 @@ const Accounts = ({ data, updateData, t, currentUser }) => {
               <div className="mb-4">
                 <Select label={t.groups.title} value={selectedGroup} onChange={e => setSelectedGroup(e.target.value)}
                   options={[{ value: '', label: t.common.select }, ...data.groups.map(g => ({ value: String(g.id), label: g.name }))]} />
+              </div>
+            )}
+            {selectedRole !== 'superadmin' && (
+              <div className="mb-4">
+                <h4 className="text-sm font-semibold text-white mb-2">{t.auth.pageAccess || 'Page Access'}</h4>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {[
+                    { id:'dashboard', label:t.nav.dashboard, icon:'dashboard', always:true },
+                    { id:'members', label:t.nav.members, icon:'users' },
+                    { id:'attendance', label:t.nav.attendance||'Attendance', icon:'attendance' },
+                    { id:'events', label:t.nav.events, icon:'calendar' },
+                    { id:'finance', label:t.nav.finance, icon:'wallet' },
+                    { id:'groups', label:t.nav.groups, icon:'groups' },
+                    { id:'accounts', label:t.auth.accounts||'Accounts', icon:'shield' },
+                    { id:'feed', label:t.social.feed, icon:'list' },
+                    { id:'spaces', label:t.social.spaces, icon:'video' },
+                    { id:'ranking', label:t.social.ranking, icon:'trending_up' },
+                    { id:'community', label:t.community?.hub||'Community', icon:'dashboard' },
+                    { id:'magazine', label:t.community?.magazine||'Magazine', icon:'book' },
+                    { id:'prayer_wall', label:t.community?.prayerWall||'Prayer Wall', icon:'heart' },
+                    { id:'announcements_page', label:t.community?.announcements||'Announcements', icon:'bell' },
+                    { id:'pastor_word', label:t.community?.pastorWord||"Pastor's Word", icon:'star' },
+                    { id:'fundraising_page', label:t.community?.fundraising||'Fundraising', icon:'heart' },
+                  ].map(pg => {
+                    const checked = pg.always || userPerms.includes(pg.id);
+                    return (
+                      <label key={pg.id} className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${checked ? 'border-green-600 bg-green-900/20 text-white' : 'border-dark-600 text-gray-500'}`}>
+                        <input type="checkbox" checked={checked} disabled={pg.always}
+                          onChange={() => {
+                            if (pg.always) return;
+                            setUserPerms(prev => prev.includes(pg.id) ? prev.filter(p => p !== pg.id) : [...prev, pg.id]);
+                          }}
+                          className="accent-green-500 w-3.5 h-3.5"/>
+                        <Icon name={pg.icon} size={13}/> {pg.label}
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
             )}
             <div className="flex justify-end gap-2">
@@ -5366,9 +5417,11 @@ function App() {
   const rp = data.rolePermissions || EMPTY_DATA.rolePermissions;
   const ALL_PAGES = ['dashboard','members','attendance','events','finance','groups','accounts','feed','spaces','ranking','community','magazine','prayer_wall','announcements_page','pastor_word','fundraising_page'];
 
-  // Superadmin always has access to everything
-  const canAccessPage = (pageId, role) => {
+  // Check user-specific overrides first, then fall back to role defaults
+  const up = data.userPermissions || {};
+  const canAccessPage = (pageId, role, userId) => {
     if (role === 'superadmin') return true;
+    if (userId && up[userId]) return up[userId].includes(pageId);
     const rolePages = rp[role] || rp.member || [];
     return rolePages.includes(pageId);
   };
@@ -5393,7 +5446,7 @@ function App() {
   return (
     <div className="flex h-screen overflow-hidden bg-dark-900">
       <Sidebar page={page} setPage={setPage} t={t} lang={lang} setLang={setLang} collapsed={collapsed} setCollapsed={setCollapsed}
-        currentUser={{...currentUser, role: effectiveRole}} canAccessPage={(pid) => canAccessPage(pid, effectiveRole)}/>
+        currentUser={{...currentUser, role: effectiveRole}} canAccessPage={(pid) => canAccessPage(pid, effectiveRole, currentUser?.id)}/>
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <Header page={page} t={t} data={data} updateData={updateData} currentUser={currentUser} onLogout={handleLogout}
           onProfile={()=>setProfileOpen(true)} isAdminUser={isAdminUser} portalMode={portalMode} setPortalMode={setPortalMode}
