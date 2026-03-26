@@ -3,7 +3,14 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'elshaddai.db');
+// Use RAILWAY_VOLUME_MOUNT_PATH for persistent storage on Railway
+const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || process.env.DATA_DIR || __dirname;
+const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'elshaddai.db');
+
+// Ensure data directory exists
+const fs = require('fs');
+if (!fs.existsSync(DATA_DIR)) { fs.mkdirSync(DATA_DIR, { recursive: true }); }
+console.log('Database path:', DB_PATH);
 
 function initDatabase() {
   const db = new Database(DB_PATH);
