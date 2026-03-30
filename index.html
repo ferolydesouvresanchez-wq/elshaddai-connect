@@ -63,6 +63,80 @@
     .user-dropdown { position: relative; }
     .user-dropdown-menu { position: absolute; right: 0; top: 100%; margin-top: 8px; background: #2d2d2d; border: 1px solid #3a3a3a; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.4); min-width: 200px; z-index: 40; overflow: hidden; }
     option { background: #3a3a3a; color: #E0E0E0; }
+
+    /* ===== MOBILE RESPONSIVE ===== */
+    @media (max-width: 768px) {
+      .sidebar-desktop { display: none !important; }
+      .mobile-bottom-nav { display: flex !important; }
+      .header-mobile-compact .header-title-text { font-size: 16px !important; }
+      .header-mobile-compact .header-badge { display: none !important; }
+      .main-content-area { padding: 12px !important; padding-bottom: 80px !important; }
+    }
+    @media (min-width: 769px) {
+      .mobile-bottom-nav { display: none !important; }
+      .mobile-menu-overlay { display: none !important; }
+      .mobile-menu-drawer { display: none !important; }
+    }
+
+    /* Bottom Nav */
+    .mobile-bottom-nav {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 45;
+      background: linear-gradient(180deg, #1e1e1e 0%, #111 100%);
+      border-top: 1px solid #3a3a3a;
+      padding: 4px 0 env(safe-area-inset-bottom, 4px) 0;
+      box-shadow: 0 -4px 20px rgba(0,0,0,0.5);
+    }
+    .bottom-nav-item {
+      display: flex; flex-direction: column; align-items: center; gap: 2px;
+      padding: 6px 0; font-size: 10px; color: #888; transition: all 0.2s;
+      position: relative; flex: 1;
+    }
+    .bottom-nav-item.active { color: #C9A84C; }
+    .bottom-nav-item.active::before {
+      content: ''; position: absolute; top: -4px; left: 50%; transform: translateX(-50%);
+      width: 24px; height: 3px; border-radius: 0 0 4px 4px;
+      background: linear-gradient(90deg, #C9A84C, #F0D080);
+    }
+    .bottom-nav-item .nav-icon-wrap {
+      width: 36px; height: 28px; border-radius: 14px; display: flex; align-items: center; justify-content: center;
+      transition: all 0.2s;
+    }
+    .bottom-nav-item.active .nav-icon-wrap {
+      background: linear-gradient(135deg, rgba(201,168,76,0.2), rgba(240,208,128,0.1));
+    }
+
+    /* Mobile Drawer */
+    .mobile-menu-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 50;
+      animation: fadeInOverlay 0.2s ease;
+    }
+    @keyframes fadeInOverlay { from { opacity: 0; } to { opacity: 1; } }
+    .mobile-menu-drawer {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 300px; z-index: 51;
+      background: linear-gradient(180deg, #1a1a1a 0%, #111 100%);
+      border-right: 1px solid #3a3a3a;
+      box-shadow: 10px 0 40px rgba(0,0,0,0.6);
+      animation: slideInDrawer 0.25s ease;
+      overflow-y: auto;
+    }
+    @keyframes slideInDrawer { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+    .drawer-section-label {
+      padding: 16px 20px 6px; font-size: 10px; color: #888;
+      text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700;
+    }
+    .drawer-item {
+      display: flex; align-items: center; gap: 14px; padding: 12px 20px;
+      color: #aaa; font-size: 14px; transition: all 0.15s; cursor: pointer; border: none; background: none; width: 100%;
+    }
+    .drawer-item:hover, .drawer-item:active { background: rgba(201,168,76,0.1); color: #F0D080; }
+    .drawer-item.active { color: #F0D080; background: rgba(201,168,76,0.12); border-left: 3px solid #C9A84C; }
+    .drawer-item .drawer-icon {
+      width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+      background: rgba(255,255,255,0.04); flex-shrink: 0;
+    }
+    .drawer-item.active .drawer-icon {
+      background: linear-gradient(135deg, rgba(201,168,76,0.25), rgba(240,208,128,0.1));
+    }
   </style>
 </head>
 <body>
@@ -1648,7 +1722,7 @@ const ProfileModal = ({ isOpen, onClose, t, currentUser, data, updateData, setCu
 // =====================================================================
 // SIDEBAR
 // =====================================================================
-const Sidebar = ({ page, setPage, t, lang, setLang, collapsed, setCollapsed, currentUser, canAccessPage }) => {
+const Sidebar = ({ page, setPage, t, lang, setLang, collapsed, setCollapsed, currentUser, canAccessPage, mobileMenuOpen, setMobileMenuOpen }) => {
   const [langOpen, setLangOpen] = useState(false);
   const langRef = useRef(null);
 
@@ -1660,19 +1734,19 @@ const Sidebar = ({ page, setPage, t, lang, setLang, collapsed, setCollapsed, cur
 
   const sections = [
     { label: 'Management', items: [
-      { id:'dashboard', icon:'dashboard', label:t.nav.dashboard },
-      { id:'members', icon:'users', label:t.nav.members },
-      { id:'attendance', icon:'attendance', label:t.nav.attendance },
-      { id:'events', icon:'calendar', label:t.nav.events },
-      { id:'finance', icon:'wallet', label:t.nav.finance },
-      { id:'groups', icon:'groups', label:t.nav.groups },
-      { id:'accounts', icon:'shield', label:t.auth.accounts },
+      { id:'dashboard', icon:'dashboard', label:t.nav.dashboard, emoji:'📊' },
+      { id:'members', icon:'users', label:t.nav.members, emoji:'👥' },
+      { id:'attendance', icon:'attendance', label:t.nav.attendance, emoji:'✅' },
+      { id:'events', icon:'calendar', label:t.nav.events, emoji:'📅' },
+      { id:'finance', icon:'wallet', label:t.nav.finance, emoji:'💰' },
+      { id:'groups', icon:'groups', label:t.nav.groups, emoji:'⛪' },
+      { id:'accounts', icon:'shield', label:t.auth.accounts, emoji:'🔑' },
     ]},
     { label: 'Social', items: [
-      { id:'feed', icon:'list', label:t.social.feed },
-      { id:'messages', icon:'message', label:t.nav.messages },
-      { id:'spaces', icon:'video', label:t.social.spaces, liveDot:true },
-      { id:'ranking', icon:'trending_up', label:t.social.ranking },
+      { id:'feed', icon:'list', label:t.social.feed, emoji:'📱' },
+      { id:'messages', icon:'message', label:t.nav.messages, emoji:'💬' },
+      { id:'spaces', icon:'video', label:t.social.spaces, liveDot:true, emoji:'🎙' },
+      { id:'ranking', icon:'trending_up', label:t.social.ranking, emoji:'⭐' },
     ]},
     { label: 'Community', items: [
       { id:'community', icon:'dashboard', label:t.community?.hub||'Community Hub', emoji:'🏠' },
@@ -1698,74 +1772,169 @@ const Sidebar = ({ page, setPage, t, lang, setLang, collapsed, setCollapsed, cur
   ];
   const currentLang = langs.find(l=>l.code===lang) || langs[0];
 
+  // Bottom nav: 5 quick-access items
+  const bottomNavItems = [
+    { id:'dashboard', icon:'dashboard', label:t.nav.dashboard },
+    { id:'feed', icon:'list', label:t.social.feed },
+    { id:'community', icon:'heart', label:'Hub' },
+    { id:'messages', icon:'message', label:t.nav.messages },
+  ];
+
+  const handleMobileNav = (id) => { setPage(id); setMobileMenuOpen && setMobileMenuOpen(false); };
+
   return (
-    <div className={`sidebar flex flex-col h-full transition-all duration-300 ${collapsed?'w-16':'w-64'} flex-shrink-0`}>
-      <div className="flex items-center gap-3 px-3 py-4 border-b border-dark-700">
-        <div className="flex-shrink-0">
-          <ChurchLogo size={collapsed?32:36}/>
+    <>
+      {/* ===== DESKTOP SIDEBAR ===== */}
+      <div className={`sidebar-desktop sidebar flex flex-col h-full transition-all duration-300 ${collapsed?'w-16':'w-64'} flex-shrink-0`}>
+        <div className="flex items-center gap-3 px-3 py-4 border-b border-dark-700">
+          <div className="flex-shrink-0">
+            <ChurchLogo size={collapsed?32:36}/>
+          </div>
+          {!collapsed && <div className="min-w-0">
+            <div className="text-gold-400 font-bold text-sm leading-tight truncate">{t.appName}</div>
+            <div className="text-gray-500 text-[10px] truncate">{t.subtitle}</div>
+          </div>}
+          <button onClick={()=>setCollapsed(!collapsed)} className="ml-auto text-gray-500 hover:text-gold-400 p-1 flex-shrink-0">
+            <Icon name="menu" size={16}/>
+          </button>
         </div>
-        {!collapsed && <div className="min-w-0">
-          <div className="text-gold-400 font-bold text-sm leading-tight truncate">{t.appName}</div>
-          <div className="text-gray-500 text-[10px] truncate">{t.subtitle}</div>
-        </div>}
-        <button onClick={()=>setCollapsed(!collapsed)} className="ml-auto text-gray-500 hover:text-gold-400 p-1 flex-shrink-0">
-          <Icon name="menu" size={16}/>
-        </button>
-      </div>
 
-      <nav className="flex-1 py-1 overflow-y-auto">
-        {filteredSections.map((section, si) => (
-          <div key={section.label}>
-            {!collapsed && si > 0 && (
-              <div className="px-4 pt-4 pb-1">
-                <span className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold">{section.label}</span>
-              </div>
-            )}
-            {collapsed && si > 0 && <div className="border-t border-dark-700 my-1 mx-3"/>}
-            {section.items.map(item=>(
-              <button key={item.id} onClick={()=>setPage(item.id)}
-                className={`nav-item w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-400 hover:text-gold-400 ${page===item.id?'active text-gold-400':''}`}>
-                {item.emoji && !collapsed ? (
-                  <span className="flex-shrink-0 text-sm w-[18px] text-center">{item.emoji}</span>
-                ) : (
-                  <Icon name={item.icon} size={18} className="flex-shrink-0"/>
-                )}
-                {!collapsed && <span className="flex-1 text-left">{item.label}</span>}
-                {item.liveDot && !collapsed && <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"/>}
-              </button>
-            ))}
-          </div>
-        ))}
-      </nav>
-
-      {/* Language Dropdown */}
-      <div className="px-3 py-3 border-t border-dark-700 relative" ref={langRef}>
-        <button onClick={()=>setLangOpen(!langOpen)}
-          className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg transition-colors hover:bg-dark-700 ${langOpen?'bg-dark-700':''}`}>
-          <span className="text-base flex-shrink-0">{currentLang.flag}</span>
-          {!collapsed && <>
-            <span className="text-sm text-gray-300 flex-1 text-left">{currentLang.name}</span>
-            <Icon name="chevron_down" size={14} className={`text-gray-500 transition-transform ${langOpen?'rotate-180':''}`}/>
-          </>}
-        </button>
-        {langOpen && (
-          <div className={`absolute ${collapsed?'left-full ml-2':'left-3 right-3'} bottom-full mb-1 bg-dark-800 border border-dark-600 rounded-xl shadow-xl overflow-hidden fade-in z-50`}
-            style={collapsed?{minWidth:'160px'}:{}}>
-            <div className="px-3 py-2 border-b border-dark-700">
-              <span className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Language</span>
+        <nav className="flex-1 py-1 overflow-y-auto">
+          {filteredSections.map((section, si) => (
+            <div key={section.label}>
+              {!collapsed && si > 0 && (
+                <div className="px-4 pt-4 pb-1">
+                  <span className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold">{section.label}</span>
+                </div>
+              )}
+              {collapsed && si > 0 && <div className="border-t border-dark-700 my-1 mx-3"/>}
+              {section.items.map(item=>(
+                <button key={item.id} onClick={()=>setPage(item.id)}
+                  className={`nav-item w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-400 hover:text-gold-400 ${page===item.id?'active text-gold-400':''}`}>
+                  {item.emoji && !collapsed ? (
+                    <span className="flex-shrink-0 text-sm w-[18px] text-center">{item.emoji}</span>
+                  ) : (
+                    <Icon name={item.icon} size={18} className="flex-shrink-0"/>
+                  )}
+                  {!collapsed && <span className="flex-1 text-left">{item.label}</span>}
+                  {item.liveDot && !collapsed && <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"/>}
+                </button>
+              ))}
             </div>
-            {langs.map(l=>(
-              <button key={l.code} onClick={()=>{setLang(l.code);setLangOpen(false);}}
-                className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-sm transition-colors ${lang===l.code?'bg-gold-500/15 text-gold-400':'text-gray-400 hover:bg-dark-700 hover:text-white'}`}>
-                <span className="text-base">{l.flag}</span>
-                <span className="flex-1 text-left">{l.name}</span>
-                {lang===l.code && <Icon name="check" size={14} className="text-gold-400"/>}
-              </button>
+          ))}
+        </nav>
+
+        {/* Language Dropdown - Desktop */}
+        <div className="px-3 py-3 border-t border-dark-700 relative" ref={langRef}>
+          <button onClick={()=>setLangOpen(!langOpen)}
+            className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg transition-colors hover:bg-dark-700 ${langOpen?'bg-dark-700':''}`}>
+            <span className="text-base flex-shrink-0">{currentLang.flag}</span>
+            {!collapsed && <>
+              <span className="text-sm text-gray-300 flex-1 text-left">{currentLang.name}</span>
+              <Icon name="chevron_down" size={14} className={`text-gray-500 transition-transform ${langOpen?'rotate-180':''}`}/>
+            </>}
+          </button>
+          {langOpen && (
+            <div className={`absolute ${collapsed?'left-full ml-2':'left-3 right-3'} bottom-full mb-1 bg-dark-800 border border-dark-600 rounded-xl shadow-xl overflow-hidden fade-in z-50`}
+              style={collapsed?{minWidth:'160px'}:{}}>
+              <div className="px-3 py-2 border-b border-dark-700">
+                <span className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Language</span>
+              </div>
+              {langs.map(l=>(
+                <button key={l.code} onClick={()=>{setLang(l.code);setLangOpen(false);}}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-sm transition-colors ${lang===l.code?'bg-gold-500/15 text-gold-400':'text-gray-400 hover:bg-dark-700 hover:text-white'}`}>
+                  <span className="text-base">{l.flag}</span>
+                  <span className="flex-1 text-left">{l.name}</span>
+                  {lang===l.code && <Icon name="check" size={14} className="text-gold-400"/>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ===== MOBILE BOTTOM NAV ===== */}
+      <div className="mobile-bottom-nav" style={{display:'none'}}>
+        {bottomNavItems.map(item => (
+          <button key={item.id} onClick={()=>handleMobileNav(item.id)}
+            className={`bottom-nav-item ${page===item.id?'active':''}`}>
+            <div className="nav-icon-wrap">
+              <Icon name={item.icon} size={20}/>
+            </div>
+            <span>{item.label}</span>
+          </button>
+        ))}
+        {/* More button opens drawer */}
+        <button onClick={()=>setMobileMenuOpen && setMobileMenuOpen(true)}
+          className={`bottom-nav-item ${mobileMenuOpen?'active':''}`}>
+          <div className="nav-icon-wrap">
+            <Icon name="menu" size={20}/>
+          </div>
+          <span>More</span>
+        </button>
+      </div>
+
+      {/* ===== MOBILE DRAWER ===== */}
+      {mobileMenuOpen && <>
+        <div className="mobile-menu-overlay" onClick={()=>setMobileMenuOpen(false)}/>
+        <div className="mobile-menu-drawer">
+          {/* Drawer Header */}
+          <div className="px-5 py-5 border-b border-dark-700" style={{background:'linear-gradient(135deg, rgba(201,168,76,0.15) 0%, rgba(201,168,76,0.02) 100%)'}}>
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{background:'linear-gradient(135deg, #C9A84C, #F0D080)', boxShadow:'0 4px 15px rgba(201,168,76,0.3)'}}>
+                <span className="text-dark-900 font-bold text-lg">{currentUser?.firstName?.[0]||'U'}</span>
+              </div>
+              <div>
+                <div className="text-white font-bold text-base">{currentUser?.firstName} {currentUser?.lastName}</div>
+                <div className="text-gold-400 text-xs">{currentUser?.role === 'superadmin' ? 'Super Admin' : currentUser?.role === 'admin' ? 'Admin' : currentUser?.role === 'ministry_leader' ? 'Leader' : 'Member'}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Drawer Nav Items */}
+          <div className="py-2">
+            {filteredSections.map((section, si) => (
+              <div key={section.label}>
+                <div className="drawer-section-label">{section.label}</div>
+                {section.items.map(item => (
+                  <button key={item.id} onClick={()=>handleMobileNav(item.id)}
+                    className={`drawer-item ${page===item.id?'active':''}`}>
+                    <div className="drawer-icon">
+                      {item.emoji ? <span className="text-base">{item.emoji}</span> : <Icon name={item.icon} size={18}/>}
+                    </div>
+                    <span className="flex-1 text-left">{item.label}</span>
+                    {item.liveDot && <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"/>}
+                    {page===item.id && <span className="w-1.5 h-1.5 rounded-full bg-gold-500"/>}
+                  </button>
+                ))}
+              </div>
             ))}
           </div>
-        )}
-      </div>
-    </div>
+
+          {/* Drawer Language */}
+          <div className="border-t border-dark-700 px-5 py-4">
+            <div className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold mb-3">Language</div>
+            <div className="flex gap-2">
+              {langs.map(l=>(
+                <button key={l.code} onClick={()=>setLang(l.code)}
+                  className={`flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl text-xs transition-all ${lang===l.code?'bg-gold-500/15 text-gold-400 ring-1 ring-gold-500/30':'text-gray-500 bg-dark-700/50 hover:bg-dark-700'}`}>
+                  <span className="text-lg">{l.flag}</span>
+                  <span>{l.name.substring(0,3)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Close button */}
+          <div className="px-5 py-4 border-t border-dark-700">
+            <button onClick={()=>setMobileMenuOpen(false)}
+              className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all text-gray-400 bg-dark-700/50 hover:bg-dark-700">
+              Close Menu
+            </button>
+          </div>
+        </div>
+      </>}
+    </>
   );
 };
 
@@ -1793,41 +1962,37 @@ const Header = ({ page, t, data, updateData, currentUser, onLogout, onProfile, i
     community:'dashboard', magazine:'book', prayer_wall:'heart', announcements_page:'bell', pastor_word:'star', fundraising_page:'heart' };
 
   return (
-    <header className="bg-dark-800 border-b border-dark-700 px-6 py-3 flex items-center justify-between">
-      <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-lg bg-gold-500/10 flex items-center justify-center text-gold-500">
-          <Icon name={icons[page]||'dashboard'} size={18}/>
+    <header className="header-mobile-compact bg-dark-800 border-b border-dark-700 px-3 sm:px-6 py-2 sm:py-3 flex items-center justify-between">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center text-gold-500 flex-shrink-0" style={{background:'linear-gradient(135deg, rgba(201,168,76,0.15), rgba(201,168,76,0.05))'}}>
+          <Icon name={icons[page]||'dashboard'} size={16}/>
         </div>
-        <h1 className="text-xl font-bold text-white">{titles[page]||page}</h1>
-        {/* Portal mode badge */}
-        {isAdminUser && <span className={`badge text-[10px] ml-2 ${portalMode==='admin'?'badge-yellow':'badge-blue'}`}>
+        <h1 className="header-title-text text-lg sm:text-xl font-bold text-white truncate">{titles[page]||page}</h1>
+        {isAdminUser && <span className={`header-badge badge text-[10px] ml-1 flex-shrink-0 ${portalMode==='admin'?'badge-yellow':'badge-blue'}`}>
           {portalMode==='admin' ? t.common.adminPortal : t.common.memberPortal}
         </span>}
       </div>
-      <div className="flex items-center gap-2">
-        {/* Portal Switch */}
+      <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
         {isAdminUser && <button onClick={()=>setPortalMode(portalMode==='admin'?'member':'admin')}
-          className="p-2 rounded-lg hover:bg-dark-700 transition-colors text-gray-400 hover:text-gold-400" title={t.common.switchPortal}>
-          <Icon name="swap" size={18}/>
+          className="p-1.5 sm:p-2 rounded-lg hover:bg-dark-700 transition-colors text-gray-400 hover:text-gold-400" title={t.common.switchPortal}>
+          <Icon name="swap" size={16}/>
         </button>}
-        {/* Theme */}
-        <button onClick={onTheme} className="p-2 rounded-lg hover:bg-dark-700 transition-colors text-gray-400 hover:text-gold-400" title={t.common.theme}>
-          <Icon name="palette" size={18}/>
+        <button onClick={onTheme} className="p-1.5 sm:p-2 rounded-lg hover:bg-dark-700 transition-colors text-gray-400 hover:text-gold-400" title={t.common.theme}>
+          <Icon name="palette" size={16}/>
         </button>
-        {/* Certificates (admin only) */}
         {['superadmin','admin'].includes(currentUser?.role) && <button onClick={onCert}
-          className="p-2 rounded-lg hover:bg-dark-700 transition-colors text-gray-400 hover:text-gold-400" title={t.common.certificates}>
-          <Icon name="award" size={18}/>
+          className="hidden sm:flex p-2 rounded-lg hover:bg-dark-700 transition-colors text-gray-400 hover:text-gold-400" title={t.common.certificates}>
+          <Icon name="award" size={16}/>
         </button>}
         <NotificationBell data={data} updateData={updateData} currentUser={currentUser} t={t}/>
         <div className="user-dropdown" ref={dropdownRef}>
-          <button onClick={()=>setDropdown(!dropdown)} className="flex items-center gap-2 hover:bg-dark-700 rounded-lg px-2 py-1.5 transition-colors">
-            <UserAvatar user={currentUser} size={32}/>
+          <button onClick={()=>setDropdown(!dropdown)} className="flex items-center gap-1.5 sm:gap-2 hover:bg-dark-700 rounded-lg px-1.5 sm:px-2 py-1 sm:py-1.5 transition-colors">
+            <UserAvatar user={currentUser} size={28}/>
             <div className="hidden sm:block text-left">
               <div className="text-sm font-semibold text-white leading-tight">{currentUser?.firstName} {currentUser?.lastName}</div>
               <div className="text-[10px] text-gray-500">{getRoleLabel(currentUser?.role, t)}</div>
             </div>
-            <Icon name="chevron_down" size={14} className="text-gray-500"/>
+            <Icon name="chevron_down" size={14} className="text-gray-500 hidden sm:block"/>
           </button>
           {dropdown && (
             <div className="user-dropdown-menu fade-in">
@@ -6438,6 +6603,7 @@ function App() {
   const [lang, setLang] = useState(()=>storage.get('church_lang','en'));
   const [page, setPage] = useState('dashboard');
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [portalMode, setPortalMode] = useState('admin'); // 'admin' or 'member'
   const [themeKey, setThemeKey] = useState(()=>storage.get('church_theme','gold'));
@@ -6642,12 +6808,13 @@ function App() {
   return (
     <div className="flex h-screen overflow-hidden bg-dark-900">
       <Sidebar page={page} setPage={setPage} t={t} lang={lang} setLang={setLang} collapsed={collapsed} setCollapsed={setCollapsed}
-        currentUser={{...currentUser, role: effectiveRole}} canAccessPage={(pid) => canAccessPage(pid, effectiveRole, currentUser?.id)}/>
+        currentUser={{...currentUser, role: effectiveRole}} canAccessPage={(pid) => canAccessPage(pid, effectiveRole, currentUser?.id)}
+        mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen}/>
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <Header page={page} t={t} data={data} updateData={updateData} currentUser={currentUser} onLogout={handleLogout}
           onProfile={()=>setProfileOpen(true)} isAdminUser={isAdminUser} portalMode={portalMode} setPortalMode={setPortalMode}
           onTheme={()=>setThemeOpen(true)} onCert={()=>setCertOpen(true)}/>
-        <main className="flex-1 overflow-y-auto p-5">
+        <main className="main-content-area flex-1 overflow-y-auto p-5">
           <PageComponent data={data} updateData={updateData} t={t} currentUser={{...currentUser, role: effectiveRole}}/>
         </main>
       </div>
