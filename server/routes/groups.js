@@ -56,6 +56,10 @@ module.exports = function(db) {
   router.put('/:id', requireRole('superadmin', 'admin', 'ministry_leader'), (req, res) => {
     const existing = db.prepare('SELECT * FROM groups_table WHERE id = ?').get(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Group not found' });
+    // Ministry leaders can only edit groups they lead
+    if (req.user.role === 'ministry_leader' && existing.leaderId !== req.user.id) {
+      return res.status(403).json({ error: 'Can only edit groups you lead' });
+    }
 
     const { name, description, type, leaderId, meetingDay, meetingTime, active } = req.body;
     db.prepare(`

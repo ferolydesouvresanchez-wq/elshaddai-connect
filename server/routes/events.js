@@ -1,6 +1,7 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { authenticate, requireRole } = require('../middleware/auth');
+const { notifyAllUsers } = require('../helpers/notify');
 
 module.exports = function(db) {
   const router = express.Router();
@@ -51,6 +52,16 @@ module.exports = function(db) {
            location || null, type || 'general', recurring ? 1 : 0, req.user.id);
 
     const event = db.prepare('SELECT * FROM events WHERE id = ?').get(id);
+
+    // Notify all users about the new event
+    notifyAllUsers(db, {
+      type: 'new_event',
+      title: 'New Event: ' + title,
+      message: `${date}${time ? ' at ' + time : ''}${location ? ' - ' + location : ''}`,
+      refId: id,
+      excludeUserId: req.user.id,
+    });
+
     res.status(201).json(event);
   });
 
@@ -58,6 +69,10 @@ module.exports = function(db) {
   router.put('/:id', requireRole('superadmin', 'admin', 'ministry_leader'), (req, res) => {
     const existing = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Event not found' });
+    // Ministry leaders can only edit their own events
+    if (req.user.role === 'ministry_leader' && existing.createdBy !== req.user.id) {
+      return res.status(403).json({ error: 'Can only edit your own events' });
+    }
 
     const { title, description, date, time, endTime, location, type, recurring } = req.body;
     db.prepare(`
@@ -77,7 +92,13 @@ module.exports = function(db) {
   });
 
   // DELETE /api/events/:id
-  router.delete('/:id', requireRole('superadmin', 'admin'), (req, res) => {
+  router.delete('/:id', requireRole('superadmin', 'admin', 'ministry_leader'), (req, res) => {
+    const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
+    if (!event) return res.status(404).json({ error: 'Event not found' });
+    // Ministry leaders can only delete their own events
+    if (req.user.role === 'ministry_leader' && event.createdBy !== req.user.id) {
+      return res.status(403).json({ error: 'Can only delete your own events' });
+    }
     db.prepare('DELETE FROM events WHERE id = ?').run(req.params.id);
     res.json({ message: 'Event deleted' });
   });

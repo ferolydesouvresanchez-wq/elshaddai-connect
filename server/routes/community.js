@@ -1,6 +1,7 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { authenticate, requireRole } = require('../middleware/auth');
+const { notifyAllUsers } = require('../helpers/notify');
 
 module.exports = function(db) {
   const router = express.Router();
@@ -234,6 +235,19 @@ module.exports = function(db) {
       INSERT INTO prayer_requests (id, userId, title, content, visibility, category)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(id, req.user.id, title || null, content, visibility || 'public', category || 'other');
+
+    // Notify all users about new prayer request (if public)
+    if (visibility !== 'leaders_only') {
+      const user = db.prepare('SELECT firstName, lastName FROM users WHERE id = ?').get(req.user.id);
+      notifyAllUsers(db, {
+        type: 'new_prayer',
+        title: 'New Prayer Request',
+        message: title || (content.substring(0, 60) + (content.length > 60 ? '...' : '')),
+        refId: id,
+        excludeUserId: req.user.id,
+      });
+    }
+
     res.status(201).json(db.prepare('SELECT * FROM prayer_requests WHERE id = ?').get(id));
   });
 
@@ -301,6 +315,15 @@ module.exports = function(db) {
       INSERT INTO fundraising_campaigns (id, title, description, goalAmount, coverImageUrl, startDate, endDate, createdBy)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, title, description || null, goalAmount, coverImageUrl || null, startDate, endDate, req.user.id);
+
+    notifyAllUsers(db, {
+      type: 'new_fundraising',
+      title: 'New Fundraising Campaign',
+      message: `${title} - Goal: $${goalAmount}`,
+      refId: id,
+      excludeUserId: req.user.id,
+    });
+
     res.status(201).json(db.prepare('SELECT * FROM fundraising_campaigns WHERE id = ?').get(id));
   });
 
@@ -357,7 +380,19 @@ module.exports = function(db) {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, title, content, priority || 'info', isPinned ? 1 : 0, req.user.id,
            attachmentUrl || null, ctaLabel || null, ctaUrl || null, expiresAt || null);
-    res.status(201).json(db.prepare('SELECT * FROM announcements WHERE id = ?').get(id));
+
+    const announcement = db.prepare('SELECT * FROM announcements WHERE id = ?').get(id);
+
+    // Notify all users about the new announcement
+    notifyAllUsers(db, {
+      type: 'new_announcement',
+      title: 'New Announcement: ' + title,
+      message: content.substring(0, 120),
+      refId: id,
+      excludeUserId: req.user.id,
+    });
+
+    res.status(201).json(announcement);
   });
 
   // PUT /api/community/announcements/:id
