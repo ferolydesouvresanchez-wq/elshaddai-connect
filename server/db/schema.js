@@ -4,13 +4,37 @@ const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 
 // Use RAILWAY_VOLUME_MOUNT_PATH for persistent storage on Railway
-const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || process.env.DATA_DIR || __dirname;
+const fs = require('fs');
+
+const VOLUME_PATH = process.env.RAILWAY_VOLUME_MOUNT_PATH;
+const DATA_DIR = VOLUME_PATH || process.env.DATA_DIR || __dirname;
 const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'elshaddai.db');
 
 // Ensure data directory exists
-const fs = require('fs');
 if (!fs.existsSync(DATA_DIR)) { fs.mkdirSync(DATA_DIR, { recursive: true }); }
-console.log('Database path:', DB_PATH);
+
+// Log persistence diagnostics
+console.log('\n=== DATABASE PERSISTENCE INFO ===');
+console.log('RAILWAY_VOLUME_MOUNT_PATH:', VOLUME_PATH || '(not set)');
+console.log('DATA_DIR:', DATA_DIR);
+console.log('DB_PATH:', DB_PATH);
+console.log('DB file exists:', fs.existsSync(DB_PATH));
+if (fs.existsSync(DB_PATH)) {
+  const stats = fs.statSync(DB_PATH);
+  console.log('DB file size:', (stats.size / 1024).toFixed(1) + ' KB');
+  console.log('DB last modified:', stats.mtime.toISOString());
+}
+if (VOLUME_PATH) {
+  console.log('Volume directory exists:', fs.existsSync(VOLUME_PATH));
+  if (fs.existsSync(VOLUME_PATH)) {
+    try {
+      const files = fs.readdirSync(VOLUME_PATH);
+      console.log('Volume contents:', files.length > 0 ? files.join(', ') : '(empty)');
+    } catch (e) { console.log('Volume read error:', e.message); }
+  }
+  console.log('DB on volume:', DB_PATH.startsWith(VOLUME_PATH) ? 'YES ✓' : 'NO ✗ WARNING!');
+}
+console.log('=================================\n');
 
 function initDatabase() {
   const db = new Database(DB_PATH);

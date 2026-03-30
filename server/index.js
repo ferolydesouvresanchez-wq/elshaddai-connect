@@ -2,12 +2,16 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const { initDatabase } = require('./db/schema');
+const { initMemoryBank } = require('./helpers/memoryBank');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Initialize database
 const db = initDatabase();
+
+// Initialize Memory Bank — verify all books before serving requests
+const memoryBankReport = initMemoryBank(db);
 
 // Middleware
 const isProduction = process.env.NODE_ENV === 'production';
@@ -45,10 +49,34 @@ app.use('/api/users', require('./routes/users')(db));
 app.use('/api/community', require('./routes/community')(db));
 app.use('/api/messages', require('./routes/messages')(db));
 app.use('/api/settings', require('./routes/settings')(db));
+app.use('/api/memory-bank', require('./routes/memoryBank')(db));
 
-// Health check
+// Health check — includes Memory Bank verification
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', version: '1.0.0', timestamp: new Date().toISOString() });
+  // Quick check: verify DB is accessible and on persistent volume
+  let dbOk = false;
+  let recordCount = 0;
+  try {
+    const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get().c;
+    const memberCount = db.prepare('SELECT COUNT(*) as c FROM members').get().c;
+    dbOk = true;
+    recordCount = userCount + memberCount;
+  } catch (e) {
+    console.error('Health check DB error:', e.message);
+  }
+
+  res.json({
+    status: dbOk ? 'ok' : 'error',
+    version: '2.0.0',
+    memoryBank: 'active',
+    dbPath: db.name,
+    volumePath: process.env.RAILWAY_VOLUME_MOUNT_PATH || '(not set)',
+    dbOnVolume: process.env.RAILWAY_VOLUME_MOUNT_PATH
+      ? db.name.startsWith(process.env.RAILWAY_VOLUME_MOUNT_PATH)
+      : true,
+    recordCount,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // SPA fallback - serve index.html for any non-API route
