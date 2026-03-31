@@ -999,6 +999,7 @@ const EMPTY_DATA = {
   userPermissions: {},
   bannerPhotos: [],
   bannerPositions: {},
+  themePreference: null,
   messages: [],
   messageParticipants: [],
 };
@@ -1117,10 +1118,15 @@ const Icon = ({ name, size=18, className="" }) => {
 // =====================================================================
 // CHURCH LOGO
 // =====================================================================
-const ChurchLogo = ({ size = 40 }) => (
-  <img src="/church-logo.png" alt="Glory of El Shaddai"
-    style={{ width: size, height: 'auto', objectFit: 'contain', borderRadius: 6 }}/>
-);
+const ChurchLogo = ({ size = 40 }) => {
+  const [imgError, setImgError] = useState(false);
+  if (imgError) {
+    return <div style={{width:size,height:size,borderRadius:6,background:'linear-gradient(135deg,#C9A84C,#a07e30)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:size*0.4}}>ES</div>;
+  }
+  return <img src="/church-logo.png" alt="Glory of El Shaddai"
+    onError={()=>setImgError(true)}
+    style={{ width: size, height: size, objectFit: 'contain', borderRadius: 6 }}/>;
+};
 
 // =====================================================================
 // UI HELPERS
@@ -2831,16 +2837,27 @@ const Attendance = ({ data, updateData, t }) => {
   const activeMembers = data.members.filter(m=>m.status==='active');
   const presentCount = Object.values(checked).filter(Boolean).length;
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const attendeeIds = activeMembers.filter(m=>checked[m.id]).map(m=>m.id);
-    const existing = data.attendance.find(a=>a.date===selDate && a.serviceType===selService);
-    if (existing) {
-      updateData('attendance', data.attendance.map(a=> a.id===existing.id ? {...a, attendeeIds} : a));
-    } else {
-      updateData('attendance', [...data.attendance, { id:Date.now(), date:selDate, serviceType:selService, attendeeIds }]);
+    // Build records array for backend API: each member gets a present/absent entry
+    const records = activeMembers.map(m => ({ memberId: m.id, present: !!checked[m.id] }));
+    try {
+      await api.post('/attendance', { date: selDate, eventType: selService, records });
+      // Refresh attendance data from server
+      const fresh = await api.get('/attendance?limit=500').catch(()=>[]);
+      // Group by date+eventType for frontend format
+      const grouped = {};
+      (Array.isArray(fresh) ? fresh : []).forEach(r => {
+        const key = `${r.date}__${r.eventType}`;
+        if (!grouped[key]) grouped[key] = { id: r.id, date: r.date, serviceType: r.eventType, attendeeIds: [] };
+        if (r.present) grouped[key].attendeeIds.push(r.memberId);
+      });
+      updateData('attendance', Object.values(grouped));
+      setSaved(true);
+      setTimeout(()=>setSaved(false), 3000);
+    } catch(err) {
+      console.error('Save attendance error:', err);
     }
-    setSaved(true);
-    setTimeout(()=>setSaved(false), 3000);
   };
 
   useEffect(() => {
@@ -5794,31 +5811,107 @@ const Accounts = ({ data, updateData, t, currentUser }) => {
 // =====================================================================
 // THEME CONFIG
 // =====================================================================
+// =====================================================================
+// MEGA THEME SYSTEM — 22 Visual Themes
+// =====================================================================
 const THEMES = {
-  gold: { primary:'#C9A84C', primaryLight:'#F0D080', primaryDark:'#a07e30', accent:'rgba(201,168,76,', bg900:'#1a1a1a', bg800:'#2d2d2d', bg700:'#3a3a3a', name:'Gold' },
-  blue: { primary:'#3B82F6', primaryLight:'#60A5FA', primaryDark:'#2563EB', accent:'rgba(59,130,246,', bg900:'#0f172a', bg800:'#1e293b', bg700:'#334155', name:'Blue' },
-  green: { primary:'#10B981', primaryLight:'#34D399', primaryDark:'#059669', accent:'rgba(16,185,129,', bg900:'#0f1f1a', bg800:'#1a2f28', bg700:'#2a3f35', name:'Green' },
-  purple: { primary:'#8B5CF6', primaryLight:'#A78BFA', primaryDark:'#7C3AED', accent:'rgba(139,92,246,', bg900:'#1a1625', bg800:'#2d2540', bg700:'#3a3555', name:'Purple' },
-  red: { primary:'#EF4444', primaryLight:'#F87171', primaryDark:'#DC2626', accent:'rgba(239,68,68,', bg900:'#1a1010', bg800:'#2d1b1b', bg700:'#3a2525', name:'Red' },
-  teal: { primary:'#14B8A6', primaryLight:'#2DD4BF', primaryDark:'#0D9488', accent:'rgba(20,184,166,', bg900:'#0f1f1d', bg800:'#1a2f2c', bg700:'#2a3f3b', name:'Teal' },
-  pink: { primary:'#EC4899', primaryLight:'#F472B6', primaryDark:'#DB2777', accent:'rgba(236,72,153,', bg900:'#1a1018', bg800:'#2d1b28', bg700:'#3a2535', name:'Pink' },
-  orange: { primary:'#F97316', primaryLight:'#FB923C', primaryDark:'#EA580C', accent:'rgba(249,115,22,', bg900:'#1a1510', bg800:'#2d231b', bg700:'#3a3025', name:'Orange' },
-  white: { primary:'#6B7280', primaryLight:'#9CA3AF', primaryDark:'#4B5563', accent:'rgba(107,114,128,', bg900:'#f3f4f6', bg800:'#ffffff', bg700:'#e5e7eb', name:'White', isLight:true },
-  gray: { primary:'#9CA3AF', primaryLight:'#D1D5DB', primaryDark:'#6B7280', accent:'rgba(156,163,175,', bg900:'#1f2937', bg800:'#374151', bg700:'#4b5563', name:'Gray' },
-  indigo: { primary:'#6366F1', primaryLight:'#818CF8', primaryDark:'#4F46E5', accent:'rgba(99,102,241,', bg900:'#1a1630', bg800:'#2d2548', bg700:'#3a3560', name:'Indigo' },
-  cyan: { primary:'#06B6D4', primaryLight:'#22D3EE', primaryDark:'#0891B2', accent:'rgba(6,182,212,', bg900:'#0f1e22', bg800:'#1a2e35', bg700:'#2a3e45', name:'Cyan' },
+  // === ORIGINAL ===
+  gold:     { primary:'#C9A84C', primaryLight:'#F0D080', primaryDark:'#a07e30', accent:'rgba(201,168,76,', bg900:'#1a1a1a', bg800:'#2d2d2d', bg700:'#3a3a3a', name:'Gold (Default)', category:'original', emoji:'✨', headFont:'', bodyFont:'', bgPattern:'', bgImage:'' },
+  blue:     { primary:'#3B82F6', primaryLight:'#60A5FA', primaryDark:'#2563EB', accent:'rgba(59,130,246,', bg900:'#0f172a', bg800:'#1e293b', bg700:'#334155', name:'Blue', category:'original', emoji:'💎', headFont:'', bodyFont:'', bgPattern:'', bgImage:'' },
+  green:    { primary:'#10B981', primaryLight:'#34D399', primaryDark:'#059669', accent:'rgba(16,185,129,', bg900:'#0f1f1a', bg800:'#1a2f28', bg700:'#2a3f35', name:'Green', category:'original', emoji:'🌿', headFont:'', bodyFont:'', bgPattern:'', bgImage:'' },
+  purple:   { primary:'#8B5CF6', primaryLight:'#A78BFA', primaryDark:'#7C3AED', accent:'rgba(139,92,246,', bg900:'#1a1625', bg800:'#2d2540', bg700:'#3a3555', name:'Purple', category:'original', emoji:'👑', headFont:'', bodyFont:'', bgPattern:'', bgImage:'' },
+  red:      { primary:'#EF4444', primaryLight:'#F87171', primaryDark:'#DC2626', accent:'rgba(239,68,68,', bg900:'#1a1010', bg800:'#2d1b1b', bg700:'#3a2525', name:'Red', category:'original', emoji:'🔥', headFont:'', bodyFont:'', bgPattern:'', bgImage:'' },
+  teal:     { primary:'#14B8A6', primaryLight:'#2DD4BF', primaryDark:'#0D9488', accent:'rgba(20,184,166,', bg900:'#0f1f1d', bg800:'#1a2f2c', bg700:'#2a3f3b', name:'Teal', category:'original', emoji:'🌊', headFont:'', bodyFont:'', bgPattern:'', bgImage:'' },
+  pink:     { primary:'#EC4899', primaryLight:'#F472B6', primaryDark:'#DB2777', accent:'rgba(236,72,153,', bg900:'#1a1018', bg800:'#2d1b28', bg700:'#3a2535', name:'Pink', category:'original', emoji:'🌸', headFont:'', bodyFont:'', bgPattern:'', bgImage:'' },
+  orange:   { primary:'#F97316', primaryLight:'#FB923C', primaryDark:'#EA580C', accent:'rgba(249,115,22,', bg900:'#1a1510', bg800:'#2d231b', bg700:'#3a3025', name:'Orange', category:'original', emoji:'🍊', headFont:'', bodyFont:'', bgPattern:'', bgImage:'' },
+
+  // === STYLE THEMES ===
+  sketch:   { primary:'#5D5346', primaryLight:'#8B7D6B', primaryDark:'#3E362B', accent:'rgba(93,83,70,', bg900:'#F5F0E8', bg800:'#FFFDF7', bg700:'#E8E0D0', name:'Sketch Drawing', category:'style', emoji:'✏️', isLight:true, headFont:'Caveat', bodyFont:'Patrick Hand', bgPattern:'repeating-linear-gradient(0deg,transparent,transparent 27px,#d4c9b8 28px)', bgImage:'' },
+  anime:    { primary:'#FF4081', primaryLight:'#FF80AB', primaryDark:'#F50057', accent:'rgba(255,64,129,', bg900:'#1a1030', bg800:'#2a1848', bg700:'#3a2860', name:'Anime', category:'style', emoji:'⚡', headFont:'Bangers', bodyFont:'Nunito', bgPattern:'radial-gradient(circle at 20% 80%, rgba(255,64,129,0.08) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(100,100,255,0.08) 0%, transparent 50%)', bgImage:'' },
+  office:   { primary:'#2563EB', primaryLight:'#60A5FA', primaryDark:'#1D4ED8', accent:'rgba(37,99,235,', bg900:'#F8FAFC', bg800:'#FFFFFF', bg700:'#E2E8F0', name:'Office', category:'style', emoji:'💼', isLight:true, headFont:'Inter', bodyFont:'Roboto', bgPattern:'', bgImage:'' },
+  school:   { primary:'#F59E0B', primaryLight:'#FCD34D', primaryDark:'#D97706', accent:'rgba(245,158,11,', bg900:'#1C1917', bg800:'#292524', bg700:'#3B3533', name:'School', category:'style', emoji:'📚', headFont:'Fredoka One', bodyFont:'Quicksand', bgPattern:'repeating-linear-gradient(0deg,transparent,transparent 31px,rgba(100,180,255,0.1) 32px)', bgImage:'' },
+  university:{ primary:'#C9A84C', primaryLight:'#F0D080', primaryDark:'#a07e30', accent:'rgba(201,168,76,', bg900:'#0C1222', bg800:'#162032', bg700:'#1E2D45', name:'University', category:'style', emoji:'🎓', headFont:'Playfair Display', bodyFont:'Lora', bgPattern:'', bgImage:'' },
+  party:    { primary:'#E040FB', primaryLight:'#EA80FC', primaryDark:'#AA00FF', accent:'rgba(224,64,251,', bg900:'#1a0a28', bg800:'#2d1540', bg700:'#401E58', name:'Party', category:'style', emoji:'🎉', headFont:'Pacifico', bodyFont:'Nunito', bgPattern:'radial-gradient(circle at 10% 90%, rgba(255,215,0,0.08) 0%, transparent 40%), radial-gradient(circle at 90% 10%, rgba(224,64,251,0.08) 0%, transparent 40%)', bgImage:'' },
+
+  // === RELIGIOUS ===
+  ministry: { primary:'#C9A84C', primaryLight:'#E8D5A0', primaryDark:'#9A7B2E', accent:'rgba(201,168,76,', bg900:'#12091E', bg800:'#1E1230', bg700:'#2A1C42', name:'Ministry & Church', category:'religious', emoji:'⛪', headFont:'Cinzel', bodyFont:'IM Fell English', bgPattern:'radial-gradient(ellipse at 50% 0%, rgba(201,168,76,0.06) 0%, transparent 60%)', bgImage:'' },
+
+  // === NATURE ===
+  nature:   { primary:'#4CAF50', primaryLight:'#81C784', primaryDark:'#2E7D32', accent:'rgba(76,175,80,', bg900:'#0D1A0D', bg800:'#162816', bg700:'#1E351E', name:'Nature & Forest', category:'nature', emoji:'🌲', headFont:'Josefin Sans', bodyFont:'Raleway', bgPattern:'radial-gradient(circle at 80% 90%, rgba(76,175,80,0.05) 0%, transparent 50%)', bgImage:'' },
+  ocean:    { primary:'#0097A7', primaryLight:'#4DD0E1', primaryDark:'#00838F', accent:'rgba(0,151,167,', bg900:'#0A1520', bg800:'#12243A', bg700:'#1A3350', name:'Ocean & Beach', category:'nature', emoji:'🏖️', headFont:'Nunito', bodyFont:'Quicksand', bgPattern:'linear-gradient(180deg, rgba(0,151,167,0.03) 0%, transparent 40%, rgba(194,164,100,0.03) 100%)', bgImage:'' },
+
+  // === SPACE ===
+  galaxy:   { primary:'#B388FF', primaryLight:'#D1C4FF', primaryDark:'#7C4DFF', accent:'rgba(179,136,255,', bg900:'#07050F', bg800:'#110D1E', bg700:'#1A152D', name:'Galaxy & Space', category:'space', emoji:'🌌', headFont:'Orbitron', bodyFont:'Exo 2', bgPattern:'radial-gradient(ellipse at 20% 50%, rgba(100,50,200,0.08) 0%, transparent 50%), radial-gradient(ellipse at 80% 50%, rgba(50,50,180,0.06) 0%, transparent 50%)', bgImage:'' },
+  retro80s: { primary:'#FF0080', primaryLight:'#FF69B4', primaryDark:'#CC0066', accent:'rgba(255,0,128,', bg900:'#0A0012', bg800:'#150020', bg700:'#200030', name:'Retro 80s', category:'space', emoji:'🕹️', headFont:'Press Start 2P', bodyFont:'VT323', bgPattern:'linear-gradient(transparent 95%, rgba(255,0,128,0.05) 100%), linear-gradient(90deg, transparent 95%, rgba(0,255,255,0.03) 100%)', bgImage:'' },
+
+  // === SEASONAL ===
+  christmas:{ primary:'#C62828', primaryLight:'#EF5350', primaryDark:'#B71C1C', accent:'rgba(198,40,40,', bg900:'#0D1A0D', bg800:'#142814', bg700:'#1E351E', name:'Christmas & Holiday', category:'seasonal', emoji:'🎄', headFont:'Mountains of Christmas', bodyFont:'Quicksand', bgPattern:'radial-gradient(circle at 30% 20%, rgba(198,40,40,0.06) 0%, transparent 40%), radial-gradient(circle at 70% 80%, rgba(46,125,50,0.06) 0%, transparent 40%)', bgImage:'' },
+
+  // === LIFESTYLE ===
+  sports:   { primary:'#FF6D00', primaryLight:'#FF9E40', primaryDark:'#E65100', accent:'rgba(255,109,0,', bg900:'#0F1214', bg800:'#1A1E22', bg700:'#252A30', name:'Sports', category:'lifestyle', emoji:'🏆', headFont:'Barlow Condensed', bodyFont:'Oswald', bgPattern:'linear-gradient(135deg, rgba(255,109,0,0.04) 0%, transparent 50%)', bgImage:'' },
+  music:    { primary:'#7B1FA2', primaryLight:'#CE93D8', primaryDark:'#4A148C', accent:'rgba(123,31,162,', bg900:'#0A0A0F', bg800:'#141420', bg700:'#1E1E30', name:'Music & Concert', category:'lifestyle', emoji:'🎵', headFont:'Bebas Neue', bodyFont:'Audiowide', bgPattern:'repeating-linear-gradient(90deg, transparent, transparent 49px, rgba(123,31,162,0.03) 50px)', bgImage:'' },
+  luxury:   { primary:'#D4AF37', primaryLight:'#F0D080', primaryDark:'#B8941E', accent:'rgba(212,175,55,', bg900:'#0A0A0A', bg800:'#151515', bg700:'#202020', name:'Luxury & Gold', category:'lifestyle', emoji:'💎', headFont:'Cormorant Garamond', bodyFont:'Didact Gothic', bgPattern:'radial-gradient(ellipse at 50% 50%, rgba(212,175,55,0.03) 0%, transparent 60%)', bgImage:'' },
+
+  // === FUN ===
+  kids:     { primary:'#FF6F00', primaryLight:'#FFB74D', primaryDark:'#E65100', accent:'rgba(255,111,0,', bg900:'#FFF8E1', bg800:'#FFFFFF', bg700:'#FFF3C4', name:'Kids & Playful', category:'fun', emoji:'🎈', isLight:true, headFont:'Bubblegum Sans', bodyFont:'Comic Neue', bgPattern:'radial-gradient(circle at 10% 10%, rgba(255,111,0,0.05) 0%, transparent 30%), radial-gradient(circle at 90% 90%, rgba(33,150,243,0.05) 0%, transparent 30%)', bgImage:'' },
+  tropical: { primary:'#00BFA5', primaryLight:'#64FFDA', primaryDark:'#00897B', accent:'rgba(0,191,165,', bg900:'#0A1A18', bg800:'#142A26', bg700:'#1E3A34', name:'Tropical', category:'fun', emoji:'🌴', headFont:'Lobster', bodyFont:'Comfortaa', bgPattern:'radial-gradient(circle at 80% 10%, rgba(255,200,0,0.04) 0%, transparent 40%)', bgImage:'' },
+  haitian:  { primary:'#D32F2F', primaryLight:'#FF5252', primaryDark:'#B71C1C', accent:'rgba(211,47,47,', bg900:'#0A0F1E', bg800:'#142040', bg700:'#1E3060', name:'Haitian & Caribbean', category:'fun', emoji:'🇭🇹', headFont:'Righteous', bodyFont:'Titan One', bgPattern:'linear-gradient(135deg, rgba(211,47,47,0.04) 0%, transparent 33%, rgba(0,50,160,0.04) 66%, transparent 100%)', bgImage:'' },
+
+  // === PROFESSIONAL ===
+  minimalist:{ primary:'#374151', primaryLight:'#6B7280', primaryDark:'#1F2937', accent:'rgba(55,65,81,', bg900:'#FAFAFA', bg800:'#FFFFFF', bg700:'#F3F4F6', name:'Minimalist', category:'professional', emoji:'◻️', isLight:true, headFont:'DM Sans', bodyFont:'Lato', bgPattern:'', bgImage:'' },
+  darkpro:  { primary:'#00E5FF', primaryLight:'#6EFFFF', primaryDark:'#00B8D4', accent:'rgba(0,229,255,', bg900:'#0D0D0D', bg800:'#171717', bg700:'#212121', name:'Dark Mode Pro', category:'professional', emoji:'🖥️', headFont:'Space Grotesk', bodyFont:'Syne', bgPattern:'', bgImage:'' },
+};
+
+// Theme categories for the settings page
+const THEME_CATEGORIES = [
+  { key:'original', label:'Original Colors', emoji:'🎨' },
+  { key:'style', label:'Visual Styles', emoji:'🖌️' },
+  { key:'religious', label:'Religious', emoji:'⛪' },
+  { key:'nature', label:'Nature', emoji:'🌿' },
+  { key:'space', label:'Space & Retro', emoji:'🚀' },
+  { key:'seasonal', label:'Seasonal', emoji:'🎄' },
+  { key:'lifestyle', label:'Lifestyle', emoji:'🎯' },
+  { key:'fun', label:'Fun & Culture', emoji:'🎉' },
+  { key:'professional', label:'Professional', emoji:'💼' },
+];
+
+// Dynamic Google Font loader
+const loadedFonts = new Set();
+const loadGoogleFont = (fontName) => {
+  if (!fontName || loadedFonts.has(fontName)) return;
+  loadedFonts.add(fontName);
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = `https://fonts.googleapis.com/css2?family=${fontName.replace(/ /g,'+')}:wght@400;600;700&display=swap`;
+  document.head.appendChild(link);
 };
 
 const applyTheme = (themeKey) => {
   const th = THEMES[themeKey] || THEMES.gold;
   document.documentElement.style.setProperty('--primary', th.primary);
   document.documentElement.style.setProperty('--primary-light', th.primaryLight);
-  // Apply CSS overrides dynamically
+
+  // Load fonts dynamically
+  if (th.headFont) loadGoogleFont(th.headFont);
+  if (th.bodyFont) loadGoogleFont(th.bodyFont);
+
+  // Remove old theme overrides
   const existing = document.getElementById('theme-overrides');
   if (existing) existing.remove();
-  if (themeKey === 'gold') return; // gold is the default, no overrides needed
+  if (themeKey === 'gold') return;
+
   const style = document.createElement('style');
   style.id = 'theme-overrides';
+
+  const fontCSS = (th.headFont || th.bodyFont) ? `
+    ${th.bodyFont ? `body, .card, p, span, div, button, input, select, textarea { font-family: '${th.bodyFont}', system-ui, sans-serif !important; }` : ''}
+    ${th.headFont ? `h1, h2, h3, h4, h5, h6, .header-title-text, .text-xl, .text-2xl, .text-3xl, .text-lg { font-family: '${th.headFont}', serif !important; }` : ''}
+  ` : '';
+
+  const bgPatternCSS = th.bgPattern ? `
+    .bg-dark-900, body { background-image: ${th.bgPattern} !important; }
+  ` : '';
+
   const lightOverrides = th.isLight ? `
     .text-white { color: #1f2937 !important; }
     .text-gray-300, .text-gray-400 { color: #4b5563 !important; }
@@ -5826,21 +5919,28 @@ const applyTheme = (themeKey) => {
     .text-gray-600 { color: #9ca3af !important; }
     .text-dark-900 { color: #1f2937 !important; }
     .divide-dark-700 > * + * { border-color: #e5e7eb !important; }
-    .border-dark-600 { border-color: #d1d5db !important; }
-    .border-dark-500 { border-color: #d1d5db !important; }
+    .border-dark-600, .border-dark-500 { border-color: #d1d5db !important; }
     .table-row:hover { background: #f9fafb !important; }
     .stat-card { color: white !important; }
     .stat-card .text-white { color: white !important; }
     .stat-card .text-white\\/80 { color: rgba(255,255,255,0.8) !important; }
     .stat-card .text-white\\/50 { color: rgba(255,255,255,0.5) !important; }
-    .stat-card .text-white\\/40 { color: rgba(255,255,255,0.4) !important; }
-    input, select, textarea { color: #1f2937 !important; background: #f3f4f6 !important; border-color: #d1d5db !important; }
+    input, select, textarea { color: #1f2937 !important; background: ${th.bg700} !important; border-color: #d1d5db !important; }
     input::placeholder, textarea::placeholder { color: #9ca3af !important; }
     .badge { color: white !important; }
+    .sidebar-desktop, .mobile-menu-drawer { background: ${th.bg800} !important; border-color: #e5e7eb !important; }
+    .mobile-bottom-nav { background: ${th.bg800} !important; border-color: #e5e7eb !important; }
+    .drawer-item { color: #4b5563 !important; }
+    .drawer-item.active { color: ${th.primary} !important; }
+    .drawer-section-label { color: #9ca3af !important; }
+    .user-dropdown-menu { background: ${th.bg800} !important; border-color: #e5e7eb !important; }
+    .modal { background: ${th.bg800} !important; border-color: #e5e7eb !important; }
   ` : '';
+
   style.textContent = `
-    body { background: ${th.bg900}; }
-    .sidebar { background: linear-gradient(180deg, ${th.bg900} 0%, ${th.bg900} 100%); }
+    body { background: ${th.bg900}; transition: background 0.3s, color 0.3s; }
+    * { transition: background-color 0.3s, border-color 0.3s, color 0.15s; }
+    .sidebar, .sidebar-desktop { background: linear-gradient(180deg, ${th.bg900} 0%, ${th.bg900} 100%) !important; }
     .text-gold-400 { color: ${th.primaryLight} !important; }
     .text-gold-500 { color: ${th.primary} !important; }
     .bg-gold-500\\/10, .bg-gold-500\\/15, .bg-gold-500\\/20 { background: ${th.accent}0.15) !important; }
@@ -5856,46 +5956,94 @@ const applyTheme = (themeKey) => {
     .border-dark-700 { border-color: ${th.isLight ? '#e5e7eb' : th.bg700} !important; }
     .nav-item.active { border-left-color: ${th.primary} !important; background: ${th.accent}0.15) !important; }
     .nav-item:hover { background: ${th.accent}0.1) !important; }
+    .drawer-item.active { color: ${th.primaryLight} !important; background: ${th.accent}0.12) !important; border-left-color: ${th.primary} !important; }
+    .drawer-item:hover { background: ${th.accent}0.08) !important; }
+    .bottom-nav-item.active { color: ${th.primary} !important; }
+    .bottom-nav-item.active::before { background: linear-gradient(90deg, ${th.primary}, ${th.primaryLight}) !important; }
+    .bottom-nav-item.active .nav-icon-wrap { background: ${th.accent}0.15) !important; }
     .glow { box-shadow: 0 0 40px ${th.accent}0.3) !important; }
     .auth-card { background: ${th.bg800} !important; }
     .auth-bg { background: linear-gradient(135deg, ${th.bg900} 0%, ${th.bg800} 50%, ${th.bg900} 100%) !important; }
+    .mobile-bottom-nav { background: linear-gradient(180deg, ${th.bg800} 0%, ${th.bg900} 100%) !important; border-color: ${th.bg700} !important; }
+    .mobile-menu-drawer { background: linear-gradient(180deg, ${th.bg900} 0%, ${th.bg900} 100%) !important; }
     input, select, textarea { background: ${th.bg700} !important; }
+    ${fontCSS}
+    ${bgPatternCSS}
     ${lightOverrides}
   `;
   document.head.appendChild(style);
 };
 
 // =====================================================================
-// THEME SETTINGS MODAL
+// THEME SETTINGS MODAL — Full visual previews with categories
 // =====================================================================
 const ThemeModal = ({ isOpen, onClose, t, currentTheme, setTheme }) => {
+  const [filter, setFilter] = useState('all');
   if (!isOpen) return null;
-  const themes = [
-    { key:'gold', color:'#C9A84C', label: 'Gold' },
-    { key:'blue', color:'#3B82F6', label: 'Blue' },
-    { key:'green', color:'#10B981', label: 'Green' },
-    { key:'purple', color:'#8B5CF6', label: 'Purple' },
-    { key:'red', color:'#EF4444', label: 'Red' },
-    { key:'teal', color:'#14B8A6', label: 'Teal' },
-    { key:'pink', color:'#EC4899', label: 'Pink' },
-    { key:'orange', color:'#F97316', label: 'Orange' },
-    { key:'white', color:'#6B7280', label: 'White', ring:'#d1d5db' },
-    { key:'gray', color:'#9CA3AF', label: 'Gray' },
-    { key:'indigo', color:'#6366F1', label: 'Indigo' },
-    { key:'cyan', color:'#06B6D4', label: 'Cyan' },
-  ];
+
+  const allThemes = Object.entries(THEMES).map(([key, th]) => ({ key, ...th }));
+  const filtered = filter === 'all' ? allThemes : allThemes.filter(th => th.category === filter);
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={t.common.themeSettings} maxWidth="max-w-sm">
-      <p className="text-sm text-gray-400 mb-4">{t.common.colorScheme}</p>
-      <div className="grid grid-cols-3 gap-3">
-        {themes.map(th => (
-          <button key={th.key} onClick={()=>{setTheme(th.key); onClose();}}
-            className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center gap-1.5 ${currentTheme===th.key?'border-current shadow-lg':'border-dark-600 hover:border-dark-500'}`}
-            style={currentTheme===th.key?{borderColor:th.color}:{}}>
-            <div className="w-8 h-8 rounded-full border" style={{background:`linear-gradient(135deg, ${th.color}, ${th.color}88)`, borderColor: th.ring || 'transparent'}}/>
-            <span className="text-xs font-medium" style={currentTheme===th.key?{color:th.color}:{}}>{th.label}</span>
-          </button>
-        ))}
+    <Modal isOpen={isOpen} onClose={onClose} title="🎨 Theme Gallery" maxWidth="max-w-2xl">
+      {/* Category filter */}
+      <div className="flex flex-wrap gap-1.5 mb-4 pb-3 border-b border-dark-700">
+        <button onClick={()=>setFilter('all')}
+          className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${filter==='all'?'text-white':'text-gray-500 hover:text-gray-300'}`}
+          style={filter==='all'?{background:THEMES[currentTheme]?.primary||'#C9A84C'}:{}}>
+          All ({allThemes.length})
+        </button>
+        {THEME_CATEGORIES.map(cat => {
+          const count = allThemes.filter(th=>th.category===cat.key).length;
+          return (
+            <button key={cat.key} onClick={()=>setFilter(cat.key)}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${filter===cat.key?'text-white':'text-gray-500 hover:text-gray-300'}`}
+              style={filter===cat.key?{background:THEMES[currentTheme]?.primary||'#C9A84C'}:{}}>
+              {cat.emoji} {cat.label} ({count})
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Theme grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[55vh] overflow-y-auto pr-1">
+        {filtered.map(th => {
+          const isActive = currentTheme === th.key;
+          return (
+            <button key={th.key} onClick={()=>{setTheme(th.key);}}
+              className={`rounded-xl border-2 transition-all overflow-hidden text-left ${isActive?'ring-2 ring-offset-1 shadow-xl':'hover:shadow-lg hover:scale-[1.02]'}`}
+              style={{borderColor: isActive ? th.primary : 'transparent', ringColor: th.primary, background: th.bg900}}>
+              {/* Preview header bar */}
+              <div className="h-8 flex items-center px-2.5 gap-1.5" style={{background: th.bg800, borderBottom: `1px solid ${th.bg700}`}}>
+                <div className="w-2 h-2 rounded-full" style={{background: th.primary}}/>
+                <div className="w-2 h-2 rounded-full" style={{background: th.primaryLight, opacity:0.5}}/>
+                <div className="w-2 h-2 rounded-full" style={{background: th.primaryDark, opacity:0.3}}/>
+                <div className="flex-1"/>
+                {isActive && <span style={{color: th.primary, fontSize:'9px', fontWeight:700}}>ACTIVE</span>}
+              </div>
+              {/* Preview body */}
+              <div className="px-2.5 py-2" style={{background: th.bgPattern ? `${th.bgPattern}, ${th.bg900}` : th.bg900}}>
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <span className="text-sm">{th.emoji}</span>
+                  <span className="text-[11px] font-bold truncate" style={{color: th.isLight ? '#1f2937' : '#fff'}}>{th.name}</span>
+                </div>
+                {/* Mini UI preview */}
+                <div className="flex gap-1 mb-1.5">
+                  <div className="h-1.5 rounded-full flex-1" style={{background: `linear-gradient(90deg, ${th.primary}, ${th.primaryLight})`}}/>
+                  <div className="h-1.5 w-4 rounded-full" style={{background: th.bg700}}/>
+                </div>
+                <div className="flex gap-1">
+                  <div className="h-4 rounded flex-1" style={{background: th.bg800, border: `1px solid ${th.bg700}`}}/>
+                  <div className="h-4 rounded flex-1" style={{background: th.bg800, border: `1px solid ${th.bg700}`}}/>
+                </div>
+                {/* Font info */}
+                {th.headFont && <div className="mt-1.5 text-[8px] truncate" style={{color: th.isLight ? '#9ca3af' : '#666', fontStyle:'italic'}}>
+                  {th.headFont} + {th.bodyFont || 'System'}
+                </div>}
+              </div>
+            </button>
+          );
+        })}
       </div>
     </Modal>
   );
@@ -6617,10 +6765,17 @@ function App() {
   const t = TR[lang] || TR.en;
 
   useEffect(()=>{ storage.set('church_lang', lang); }, [lang]);
-  useEffect(()=>{ storage.set('church_theme', themeKey); applyTheme(themeKey); }, [themeKey]);
+  useEffect(()=>{
+    storage.set('church_theme', themeKey);
+    applyTheme(themeKey);
+    // Persist theme to backend (per-user via MEMORY_THEME_PREFERENCES)
+    if (currentUser) {
+      api.put('/settings/themePreference', { value: themeKey }).catch(()=>{});
+    }
+  }, [themeKey]);
 
   // Keys that persist to backend settings API
-  const PERSISTED_SETTINGS = ['bannerPhotos', 'bannerPositions', 'userPermissions', 'rolePermissions', 'eventRsvps'];
+  const PERSISTED_SETTINGS = ['bannerPhotos', 'bannerPositions', 'userPermissions', 'rolePermissions', 'eventRsvps', 'themePreference'];
 
   const updateData = useCallback((key, value) => {
     setData(prev => ({ ...prev, [key]: value }));
@@ -6672,7 +6827,16 @@ function App() {
           ...prev,
           finance: finRes.transactions || [],
           users: Array.isArray(usersRes) ? usersRes : [],
-          attendance: Array.isArray(attRes) ? attRes : [],
+          attendance: (() => {
+            const raw = Array.isArray(attRes) ? attRes : [];
+            const grouped = {};
+            raw.forEach(r => {
+              const key = `${r.date}__${r.eventType}`;
+              if (!grouped[key]) grouped[key] = { id: r.id, date: r.date, serviceType: r.eventType, attendeeIds: [] };
+              if (r.present) grouped[key].attendeeIds.push(r.memberId);
+            });
+            return Object.values(grouped);
+          })(),
           groups: Array.isArray(groupsRes) ? groupsRes : [],
         }));
       } else {
@@ -6710,6 +6874,7 @@ function App() {
         userPermissions: settingsRes.userPermissions || {},
         rolePermissions: settingsRes.rolePermissions || prev.rolePermissions,
         eventRsvps: settingsRes.eventRsvps || [],
+        themePreference: settingsRes.themePreference || null,
       }));
     } catch (err) {
       if (!isRefresh) console.error('Data load error:', err);
@@ -6721,6 +6886,15 @@ function App() {
     if (!currentUser) return;
     loadAllData(currentUser);
   }, [currentUser]);
+
+  // Apply user's saved theme from backend (runs once after settings load)
+  const themeAppliedRef = useRef(false);
+  useEffect(() => {
+    if (data.themePreference && THEMES[data.themePreference] && !themeAppliedRef.current) {
+      themeAppliedRef.current = true;
+      setThemeKey(data.themePreference);
+    }
+  }, [data.themePreference]);
 
   // Auto-refresh: poll every 30 seconds + refresh when tab becomes visible
   useEffect(() => {

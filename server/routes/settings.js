@@ -2,7 +2,7 @@ const express = require('express');
 const { authenticate, requireRole } = require('../middleware/auth');
 
 // Keys that are per-user (stored with userId prefix)
-const USER_SCOPED_KEYS = ['bannerPhotos', 'bannerPositions'];
+const USER_SCOPED_KEYS = ['bannerPhotos', 'bannerPositions', 'themePreference'];
 
 module.exports = function(db) {
   const router = express.Router();

@@ -32,6 +32,7 @@ const MEMORY_BOOKS = {
   MEMORY_FUNDRAISING:    { tables: ['fundraising_campaigns', 'fundraising_donations'], label: 'Fundraising' },
   MEMORY_MAGAZINES:      { tables: ['magazines', 'magazine_articles'], label: 'Magazines' },
   MEMORY_SETTINGS:       { tables: ['app_settings', 'hub_config'], label: 'App Settings & Banners' },
+  MEMORY_THEME_PREFERENCES: { tables: ['app_settings'], label: 'Theme Preferences (per-user)' },
   MEMORY_COURSES:        { tables: ['courses', 'lessons', 'lesson_progress'], label: 'Courses & Lessons' },
   MEMORY_AUTH:           { tables: ['users'], label: 'Authentication' },
 };
