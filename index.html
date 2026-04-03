@@ -1740,7 +1740,7 @@ const ProfileModal = ({ isOpen, onClose, t, currentUser, data, updateData, setCu
 // =====================================================================
 // SIDEBAR
 // =====================================================================
-const Sidebar = ({ page, setPage, t, lang, setLang, collapsed, setCollapsed, currentUser, canAccessPage, mobileMenuOpen, setMobileMenuOpen }) => {
+const Sidebar = ({ page, setPage, t, lang, setLang, collapsed, setCollapsed, currentUser, canAccessPage, mobileMenuOpen, setMobileMenuOpen, hasLiveSpaces }) => {
   const [langOpen, setLangOpen] = useState(false);
   const langRef = useRef(null);
 
@@ -1763,7 +1763,7 @@ const Sidebar = ({ page, setPage, t, lang, setLang, collapsed, setCollapsed, cur
     { label: 'Social', items: [
       { id:'feed', icon:'list', label:t.social.feed, emoji:'📱' },
       { id:'messages', icon:'message', label:t.nav.messages, emoji:'💬' },
-      { id:'spaces', icon:'video', label:t.social.spaces, liveDot:true, emoji:'🎙' },
+      { id:'spaces', icon:'video', label:t.social.spaces, liveDot:!!hasLiveSpaces, emoji:'🎙' },
       { id:'ranking', icon:'trending_up', label:t.social.ranking, emoji:'⭐' },
     ]},
     { label: 'Community', items: [
@@ -7338,7 +7338,7 @@ function App() {
     <div className="flex h-screen overflow-hidden bg-dark-900">
       <Sidebar page={page} setPage={setPage} t={t} lang={lang} setLang={setLang} collapsed={collapsed} setCollapsed={setCollapsed}
         currentUser={{...currentUser, role: effectiveRole}} canAccessPage={(pid) => canAccessPage(pid, effectiveRole, currentUser?.id)}
-        mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen}/>
+        mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} hasLiveSpaces={(data.spaces||[]).some(s=>s.status==='live')}/>
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <Header page={page} t={t} data={data} updateData={updateData} currentUser={currentUser} onLogout={handleLogout}
           onProfile={()=>setProfileOpen(true)} isAdminUser={isAdminUser} portalMode={portalMode} setPortalMode={setPortalMode}
