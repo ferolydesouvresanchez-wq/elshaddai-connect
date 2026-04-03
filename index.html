@@ -1120,13 +1120,24 @@ const Icon = ({ name, size=18, className="" }) => {
 // CHURCH LOGO
 // =====================================================================
 const ChurchLogo = ({ size = 40 }) => {
-  const [imgError, setImgError] = useState(false);
-  if (imgError) {
+  const [retries, setRetries] = useState(0);
+  const [loaded, setLoaded] = useState(false);
+  const maxRetries = 3;
+
+  const handleError = () => {
+    if (retries < maxRetries) {
+      setTimeout(() => setRetries(r => r + 1), 1000 * (retries + 1));
+    }
+  };
+
+  const showFallback = retries >= maxRetries && !loaded;
+  if (showFallback) {
     return <div style={{width:size,height:size,borderRadius:6,background:'linear-gradient(135deg,#C9A84C,#a07e30)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:size*0.4}}>ES</div>;
   }
-  return <img src="/church-logo.png" alt="Glory of El Shaddai"
-    onError={()=>setImgError(true)}
-    style={{ width: size, height: size, objectFit: 'contain', borderRadius: 6 }}/>;
+  return <img src={`/church-logo.png${retries > 0 ? '?r=' + retries : ''}`} alt="Glory of El Shaddai"
+    onLoad={()=>setLoaded(true)}
+    onError={handleError}
+    style={{ width: size, height: size, objectFit: 'contain', borderRadius: 6, display: loaded ? 'block' : 'block' }}/>;
 };
 
 // =====================================================================
@@ -6576,6 +6587,33 @@ const MessagesPage = ({ data, updateData, t, currentUser }) => {
   };
   useEffect(() => { loadConversations(); }, []);
 
+  // Poll for new messages every 5 seconds
+  useEffect(() => {
+    const pollMessages = async () => {
+      try {
+        const res = await api.get('/messages/conversations');
+        if (!Array.isArray(res)) return;
+        setConversations(prev => {
+          // Merge: keep server data but don't lose optimistic local messages
+          const serverMap = new Map(res.map(c => [c.id, c]));
+          const merged = res.map(sc => {
+            const local = prev.find(lc => lc.id === sc.id);
+            if (!local) return sc;
+            // If local has more messages (optimistic), keep the longer list
+            const localMsgs = local.chatMessages || [];
+            const serverMsgs = sc.chatMessages || [];
+            return serverMsgs.length >= localMsgs.length ? sc : { ...sc, chatMessages: localMsgs };
+          });
+          // Add any local-only conversations (just created, not yet on server)
+          prev.forEach(lc => { if (!serverMap.has(lc.id)) merged.push(lc); });
+          return merged;
+        });
+      } catch (e) { /* silent */ }
+    };
+    const interval = setInterval(pollMessages, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
   const allUsers = (data.users || []).filter(u => u.id !== currentUser?.id && u.active !== 0 && u.status === 'approved');
 
   const myConversations = [...conversations].sort((a, b) => {
@@ -7017,30 +7055,30 @@ function App() {
   const loadAllData = useCallback(async (user, isRefresh = false) => {
     if (!user) return;
     try {
-      const [membersRes, eventsRes, notifRes] = await Promise.all([
+      const [membersRes, eventsRes, notifRes, usersRes] = await Promise.all([
         api.get('/members?limit=500').catch(()=>({members:[]})),
         api.get('/events?limit=200').catch(()=>[]),
         api.get('/notifications').catch(()=>({notifications:[],unreadCount:0})),
+        api.get('/users').catch(()=>[]),
       ]);
       setData(prev => ({
         ...prev,
         members: membersRes.members || membersRes || [],
         events: Array.isArray(eventsRes) ? eventsRes : [],
         notifications: notifRes.notifications || [],
+        users: Array.isArray(usersRes) ? usersRes : [],
       }));
 
       const isAdmin = ['superadmin','admin'].includes(user.role);
       if (isAdmin) {
-        const [finRes, usersRes, attRes, groupsRes] = await Promise.all([
+        const [finRes, attRes, groupsRes] = await Promise.all([
           api.get('/finance?limit=500').catch(()=>({transactions:[]})),
-          api.get('/users').catch(()=>[]),
           api.get('/attendance?limit=500').catch(()=>[]),
           api.get('/groups').catch(()=>[]),
         ]);
         setData(prev => ({
           ...prev,
           finance: finRes.transactions || [],
-          users: Array.isArray(usersRes) ? usersRes : [],
           attendance: (() => {
             const raw = Array.isArray(attRes) ? attRes : [];
             const grouped = {};
@@ -7147,7 +7185,7 @@ function App() {
     return (
       <div className="flex items-center justify-center h-screen bg-dark-900">
         <div className="text-center">
-          <img src="/church-logo.png" alt="" className="w-20 h-20 mx-auto mb-4 rounded-xl" style={{objectFit:'contain'}}/>
+          <div className="mx-auto mb-4"><ChurchLogo size={80}/></div>
           <div className="text-gold-400 text-lg font-semibold">El Shaddai Connect</div>
           <div className="mt-3 text-gray-500 text-sm">Loading...</div>
         </div>

@@ -7,9 +7,15 @@ module.exports = function(db) {
   const router = express.Router();
   router.use(authenticate);
 
-  // GET /api/users - List all users (admin)
-  router.get('/', requireRole('superadmin', 'admin'), (req, res) => {
-    const users = db.prepare('SELECT id, username, email, firstName, lastName, role, phone, avatar, status, active, createdAt FROM users ORDER BY lastName').all();
+  // GET /api/users - List all users (admin gets full list, members get directory)
+  router.get('/', (req, res) => {
+    const isAdmin = ['superadmin', 'admin'].includes(req.user.role);
+    if (isAdmin) {
+      const users = db.prepare('SELECT id, username, email, firstName, lastName, role, phone, avatar, status, active, createdAt FROM users ORDER BY lastName').all();
+      return res.json(users);
+    }
+    // Non-admin: return approved active users with limited fields (for messaging/directory)
+    const users = db.prepare("SELECT id, firstName, lastName, role, avatar FROM users WHERE status = 'approved' AND active = 1 ORDER BY lastName").all();
     res.json(users);
   });
 
