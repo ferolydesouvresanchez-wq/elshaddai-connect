@@ -1,6 +1,7 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { authenticate } = require('../middleware/auth');
+const { notifyUsers } = require('../helpers/notify');
 
 module.exports = function(db) {
   const router = express.Router();
@@ -108,6 +109,23 @@ module.exports = function(db) {
     // Mark as read by sender
     db.prepare('INSERT OR IGNORE INTO chat_message_reads (messageId, userId) VALUES (?, ?)')
       .run(msgId, req.user.id);
+
+    // Notify other participants
+    const otherParticipants = db.prepare(
+      'SELECT userId FROM conversation_participants WHERE conversationId = ? AND userId != ?'
+    ).all(req.params.id, req.user.id).map(r => r.userId);
+
+    if (otherParticipants.length > 0) {
+      const sender = db.prepare('SELECT firstName, lastName FROM users WHERE id = ?').get(req.user.id);
+      const senderName = sender ? `${sender.firstName} ${sender.lastName}` : 'Someone';
+      const preview = text.length > 80 ? text.substring(0, 80) + '...' : text;
+      notifyUsers(db, otherParticipants, {
+        type: 'new_message',
+        title: `New message from ${senderName}`,
+        message: preview,
+        refId: req.params.id,
+      });
+    }
 
     const msg = db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(msgId);
     res.status(201).json({ ...msg, readBy: [req.user.id] });
