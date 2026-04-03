@@ -1,6 +1,7 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { authenticate, requireRole } = require('../middleware/auth');
+const { notifyAllUsers } = require('../helpers/notify');
 
 module.exports = function(db) {
   const router = express.Router();
@@ -73,19 +74,15 @@ module.exports = function(db) {
 
     db.prepare("UPDATE spaces SET status = 'live', startedAt = datetime('now') WHERE id = ?").run(req.params.id);
 
-    // Notify followers
-    const followers = db.prepare(`
-      SELECT followerId FROM follows WHERE followingId = ? AND status = 'active'
-    `).all(req.user.id);
-
+    // Notify all users that a space went live
     const host = db.prepare('SELECT firstName, lastName FROM users WHERE id = ?').get(req.user.id);
-    for (const f of followers) {
-      db.prepare('INSERT INTO notifications (id, userId, type, title, message, refId) VALUES (?, ?, ?, ?, ?, ?)').run(
-        uuidv4(), f.followerId, 'space_live',
-        'Space is live!', `${host.firstName} ${host.lastName} is now live: ${space.title}`,
-        req.params.id
-      );
-    }
+    notifyAllUsers(db, {
+      type: 'space_live',
+      title: 'Space is Live!',
+      message: `${host.firstName} ${host.lastName} is now live: ${space.title}`,
+      refId: req.params.id,
+      excludeUserId: req.user.id,
+    });
 
     const updated = db.prepare('SELECT * FROM spaces WHERE id = ?').get(req.params.id);
     res.json(enrichSpace(updated));
@@ -111,14 +108,19 @@ module.exports = function(db) {
     const space = db.prepare('SELECT * FROM spaces WHERE id = ?').get(req.params.id);
     if (!space) return res.status(404).json({ error: 'Space not found' });
 
-    const existing = db.prepare('SELECT * FROM space_participants WHERE spaceId = ? AND userId = ? AND leftAt IS NULL').get(
+    const existing = db.prepare('SELECT * FROM space_participants WHERE spaceId = ? AND userId = ?').get(
       req.params.id, req.user.id
     );
-    if (existing) return res.json({ message: 'Already in space' });
+    if (existing && !existing.leftAt) return res.json({ message: 'Already in space' });
 
-    db.prepare('INSERT INTO space_participants (id, spaceId, userId) VALUES (?, ?, ?)').run(
-      uuidv4(), req.params.id, req.user.id
-    );
+    if (existing) {
+      // Rejoin: reset leftAt
+      db.prepare("UPDATE space_participants SET leftAt = NULL, joinedAt = datetime('now') WHERE id = ?").run(existing.id);
+    } else {
+      db.prepare('INSERT INTO space_participants (id, spaceId, userId) VALUES (?, ?, ?)').run(
+        uuidv4(), req.params.id, req.user.id
+      );
+    }
     res.status(201).json({ message: 'Joined space' });
   });
 

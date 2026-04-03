@@ -3994,6 +3994,7 @@ const NotificationBell = ({ data, updateData, currentUser, t }) => {
     if (type === 'comment') return '💭';
     if (type === 'reaction') return '❤️';
     if (type === 'new_follower' || type === 'follow_request') return '👤';
+    if (type === 'space_live') return '🎙';
     return '🔔';
   };
 
@@ -4345,45 +4346,93 @@ const FeedPage = ({ data, updateData, t, currentUser }) => {
 // =====================================================================
 // LIVE SPACES (Module 4)
 // =====================================================================
-const SpaceDetailModal = ({ space, isOpen, onClose, data, updateData, currentUser, t }) => {
+const SpaceDetailModal = ({ space, isOpen, onClose, data, updateData, currentUser, t, onRefresh }) => {
   const [chatText, setChatText] = useState('');
+  const [detail, setDetail] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  // Load full space detail from API
+  useEffect(() => {
+    if (!isOpen || !space) { setDetail(null); return; }
+    const loadDetail = async () => {
+      try {
+        const res = await api.get(`/spaces/${space.id}`);
+        setDetail(res);
+      } catch (e) { console.error('Load space detail:', e); }
+    };
+    loadDetail();
+    // Poll for chat updates every 3 seconds when live
+    if (space.status === 'live') {
+      const interval = setInterval(loadDetail, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [isOpen, space?.id, space?.status]);
+
   if (!isOpen || !space) return null;
 
-  const participants = (data.spaceParticipants||[]).filter(p=>p.spaceId===space.id && !p.leftAt);
-  const chats = (data.spaceChats||[]).filter(c=>c.spaceId===space.id).sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
+  const participants = detail?.participants || [];
+  const chats = detail?.chats || [];
   const isHost = space.hostId === currentUser?.id;
-  const isJoined = participants.some(p=>p.userId===currentUser?.id);
+  const isJoined = participants.some(p => p.userId === currentUser?.id);
   const isLive = space.status === 'live';
+  const isScheduled = space.status === 'scheduled';
 
-  const joinSpace = () => {
+  const joinSpace = async () => {
     if (isJoined) return;
-    updateData('spaceParticipants', [...(data.spaceParticipants||[]), { id:Date.now(), spaceId:space.id, userId:currentUser.id, joinedAt:new Date().toISOString(), leftAt:null }]);
+    try {
+      await api.post(`/spaces/${space.id}/join`);
+      const res = await api.get(`/spaces/${space.id}`);
+      setDetail(res);
+    } catch (e) { console.error('Join space error:', e); }
   };
 
-  const leaveSpace = () => {
-    updateData('spaceParticipants', (data.spaceParticipants||[]).map(p => p.spaceId===space.id && p.userId===currentUser.id && !p.leftAt ? {...p, leftAt:new Date().toISOString()} : p));
+  const leaveSpace = async () => {
+    try {
+      await api.post(`/spaces/${space.id}/leave`);
+      const res = await api.get(`/spaces/${space.id}`);
+      setDetail(res);
+    } catch (e) { console.error('Leave space error:', e); }
   };
 
-  const sendChat = () => {
+  const sendChat = async () => {
     if (!chatText.trim()) return;
-    updateData('spaceChats', [...(data.spaceChats||[]), { id:Date.now(), spaceId:space.id, userId:currentUser.id, text:chatText.trim(), createdAt:new Date().toISOString() }]);
+    const text = chatText.trim();
     setChatText('');
+    try {
+      await api.post(`/spaces/${space.id}/chat`, { text });
+      const res = await api.get(`/spaces/${space.id}`);
+      setDetail(res);
+    } catch (e) { console.error('Send chat error:', e); }
   };
 
-  const endSpace = () => {
-    updateData('spaces', (data.spaces||[]).map(s=>s.id===space.id?{...s, status:'ended', endedAt:new Date().toISOString()}:s));
-    updateData('spaceParticipants', (data.spaceParticipants||[]).map(p=>p.spaceId===space.id && !p.leftAt?{...p,leftAt:new Date().toISOString()}:p));
-    onClose();
+  const endSpace = async () => {
+    try {
+      await api.put(`/spaces/${space.id}/end`, {});
+      if (onRefresh) onRefresh();
+      onClose();
+    } catch (e) { console.error('End space error:', e); }
   };
 
-  const goLive = () => {
-    updateData('spaces', (data.spaces||[]).map(s=>s.id===space.id?{...s, status:'live', startedAt:new Date().toISOString()}:s));
-    joinSpace();
-    // Notify followers
-    const followerIds = (data.follows||[]).filter(f=>f.followingId===currentUser?.id && f.status==='accepted').map(f=>f.followerId);
-    followerIds.forEach(fid => {
-      addNotification(data, updateData, { userId:fid, type:'space_live', title:t.social.spaces, message:`${currentUser.firstName} ${t.social.wentLive}: ${space.title}`, refId:space.id });
-    });
+  const goLive = async () => {
+    try {
+      await api.put(`/spaces/${space.id}/live`, {});
+      if (onRefresh) onRefresh();
+      // Reload detail
+      const res = await api.get(`/spaces/${space.id}`);
+      setDetail(res);
+      // Auto-join
+      await api.post(`/spaces/${space.id}/join`).catch(() => {});
+      const res2 = await api.get(`/spaces/${space.id}`);
+      setDetail(res2);
+    } catch (e) { console.error('Go live error:', e); }
+  };
+
+  const deleteSpace = async () => {
+    try {
+      await api.del(`/spaces/${space.id}`);
+      if (onRefresh) onRefresh();
+      onClose();
+    } catch (e) { console.error('Delete space error:', e); }
   };
 
   return (
@@ -4396,52 +4445,70 @@ const SpaceDetailModal = ({ space, isOpen, onClose, data, updateData, currentUse
               <div className="flex items-center gap-2">
                 <h3 className="font-bold text-white">{space.title}</h3>
                 {isLive && <span className="badge badge-red text-[10px] animate-pulse">{t.social.liveNow}</span>}
+                {isScheduled && <span className="badge badge-blue text-[10px]">Scheduled</span>}
               </div>
-              <div className="text-xs text-gray-500 mt-1">{t.social.host}: {getUserName(space.hostId, data)} | {participants.length} {t.social.participants}</div>
+              <div className="text-xs text-gray-500 mt-1">{t.social.host}: {space.host ? `${space.host.firstName} ${space.host.lastName}` : getUserName(space.hostId, data)} | {participants.length} {t.social.participants}</div>
+              {space.description && <p className="text-xs text-gray-400 mt-1">{space.description}</p>}
             </div>
             <button onClick={onClose} className="text-gray-500 hover:text-white"><Icon name="close" size={20}/></button>
           </div>
         </div>
 
-        {/* Simulated Stream Area */}
-        <div className="bg-dark-900 p-6 flex flex-col items-center justify-center" style={{minHeight:'120px'}}>
-          <Icon name={space.type==='video'?'video':'mic'} size={40} className="text-gold-500/30 mb-2"/>
-          <div className="text-sm text-gray-500">{isLive ? (space.type==='video'?'Video':'Audio')+' Stream (Simulated)' : space.status==='upcoming' ? `${t.social.scheduledFor} ${space.scheduledAt}` : t.social.ended}</div>
+        {/* Stream Area */}
+        <div className={`p-6 flex flex-col items-center justify-center ${isLive ? 'bg-gradient-to-b from-red-900/20 to-dark-900' : 'bg-dark-900'}`} style={{minHeight:'120px'}}>
+          <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-3 ${isLive ? 'bg-red-500/20 animate-pulse' : 'bg-dark-700'}`}>
+            <Icon name={space.type==='video'?'video':'mic'} size={28} className={isLive ? 'text-red-400' : 'text-gray-500'}/>
+          </div>
+          <div className="text-sm text-gray-400 font-medium">
+            {isLive ? (space.type==='video'?'Video':'Audio')+' Space - LIVE' : isScheduled ? `Scheduled: ${space.scheduledAt ? new Date(space.scheduledAt).toLocaleString() : 'TBD'}` : 'Ended'}
+          </div>
+          {isLive && <div className="flex items-center gap-1 mt-1"><span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"/><span className="text-xs text-red-400">Live now</span></div>}
         </div>
 
         {/* Actions */}
         <div className="flex gap-2 p-3 border-b border-dark-700">
           {isLive && !isJoined && <Btn variant="gold" size="sm" onClick={joinSpace}><Icon name="plus" size={14}/>{t.social.joinSpace}</Btn>}
           {isLive && isJoined && !isHost && <Btn variant="ghost" size="sm" onClick={leaveSpace}>{t.social.leaveSpace}</Btn>}
-          {isHost && space.status==='upcoming' && <Btn variant="gold" size="sm" onClick={goLive}><Icon name="play" size={14}/>{t.social.startSpace}</Btn>}
-          {isHost && isLive && <Btn variant="danger" size="sm" onClick={endSpace}>{t.social.endSpace}</Btn>}
+          {isHost && isScheduled && <Btn variant="gold" size="sm" onClick={goLive}><Icon name="play" size={14}/>{t.social.startSpace || 'Go Live'}</Btn>}
+          {isHost && isLive && <Btn variant="danger" size="sm" onClick={endSpace}>{t.social.endSpace || 'End Space'}</Btn>}
+          {isHost && (isScheduled || space.status === 'ended') && <Btn variant="ghost" size="sm" onClick={deleteSpace}><Icon name="trash" size={14}/>Delete</Btn>}
         </div>
 
         {/* Participants */}
         <div className="p-3 border-b border-dark-700">
           <div className="text-xs text-gray-500 mb-2">{t.social.participants} ({participants.length})</div>
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-wrap gap-1.5">
             {participants.map(p=>(
-              <span key={p.id} className="badge badge-blue text-[10px]">{getUserName(p.userId, data)}</span>
+              <span key={p.id} className="badge badge-blue text-[10px] flex items-center gap-1">
+                {p.firstName ? `${p.firstName} ${p.lastName}` : getUserName(p.userId, data)}
+                {p.userId === space.hostId && <span className="text-[8px] text-gold-400 ml-0.5">HOST</span>}
+              </span>
             ))}
+            {participants.length === 0 && <span className="text-xs text-gray-600">No participants yet</span>}
           </div>
         </div>
 
         {/* Chat */}
-        {isLive && (
+        {(isLive || chats.length > 0) && (
           <div className="p-3">
-            <div className="text-xs text-gray-500 mb-2">{t.social.chat}</div>
-            <div className="max-h-40 overflow-y-auto space-y-1 mb-2">
-              {chats.slice(-30).map(c=>(
-                <div key={c.id} className="text-xs"><span className="font-semibold text-gold-400">{getUserName(c.userId, data)}</span> <span className="text-gray-400">{c.text}</span></div>
+            <div className="text-xs text-gray-500 mb-2">{t.social.chat} ({chats.length})</div>
+            <div className="max-h-48 overflow-y-auto space-y-1.5 mb-2 scroll-smooth">
+              {chats.length === 0 && <div className="text-xs text-gray-600 py-2">No messages yet. Start the conversation!</div>}
+              {chats.slice(-50).map(c=>(
+                <div key={c.id} className="text-xs py-0.5">
+                  <span className="font-semibold text-gold-400">{c.firstName || getUserName(c.userId, data)}</span>
+                  <span className="text-gray-400 ml-1.5">{c.text}</span>
+                  <span className="text-[9px] text-gray-600 ml-2">{c.createdAt ? new Date(c.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : ''}</span>
+                </div>
               ))}
             </div>
-            {isJoined && (
+            {isLive && isJoined && (
               <div className="flex gap-2">
-                <input value={chatText} onChange={e=>setChatText(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendChat()} placeholder={t.social.sendMessage} className="flex-1 text-xs px-2 py-1.5 rounded-lg border border-dark-600"/>
-                <button onClick={sendChat} className="text-gold-400 hover:text-gold-500"><Icon name="send" size={14}/></button>
+                <input value={chatText} onChange={e=>setChatText(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendChat()} placeholder={t.social.sendMessage || 'Type a message...'} className="flex-1 text-xs px-3 py-2 rounded-lg border border-dark-600 bg-dark-700"/>
+                <button onClick={sendChat} className="px-3 py-2 rounded-lg bg-gold-500/10 text-gold-400 hover:bg-gold-500/20 transition-colors"><Icon name="send" size={14}/></button>
               </div>
             )}
+            {isLive && !isJoined && <p className="text-xs text-gray-500 italic">Join the space to chat</p>}
           </div>
         )}
       </div>
@@ -4454,56 +4521,90 @@ const SpacesPage = ({ data, updateData, t, currentUser }) => {
   const [createModal, setCreateModal] = useState(false);
   const [selectedSpace, setSelectedSpace] = useState(null);
   const [form, setForm] = useState({});
+  const [spaces, setSpaces] = useState([]);
 
   const isAdminOrLeader = ['superadmin','admin','ministry_leader'].includes(currentUser?.role);
-  const spaces = (data.spaces||[]);
+
+  // Load spaces from API
+  const loadSpaces = async () => {
+    try {
+      const res = await api.get('/spaces');
+      setSpaces(Array.isArray(res) ? res : []);
+    } catch (e) { console.error('Load spaces error:', e); }
+  };
+  useEffect(() => { loadSpaces(); }, []);
+
+  // Poll spaces every 10 seconds
+  useEffect(() => {
+    const interval = setInterval(loadSpaces, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
   const liveSpaces = spaces.filter(s=>s.status==='live');
-  const upcomingSpaces = spaces.filter(s=>s.status==='upcoming').sort((a,b)=>new Date(a.scheduledAt)-new Date(b.scheduledAt));
-  const endedSpaces = spaces.filter(s=>s.status==='ended').sort((a,b)=>new Date(b.endedAt)-new Date(a.endedAt));
+  const scheduledSpaces = spaces.filter(s=>s.status==='scheduled').sort((a,b)=>new Date(a.scheduledAt||0)-new Date(b.scheduledAt||0));
+  const endedSpaces = spaces.filter(s=>s.status==='ended').sort((a,b)=>new Date(b.endedAt||0)-new Date(a.endedAt||0));
 
   const openCreate = () => {
     setForm({ title:'', description:'', type:'audio', scheduledAt:'' });
     setCreateModal(true);
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!form.title?.trim()) return;
-    const status = form.scheduledAt ? 'upcoming' : 'live';
-    const newSpace = { id:Date.now(), hostId:currentUser.id, title:form.title.trim(), description:form.description, type:form.type, status, scheduledAt:form.scheduledAt||null, startedAt:status==='live'?new Date().toISOString():null, endedAt:null, createdAt:new Date().toISOString() };
-    updateData('spaces', [...spaces, newSpace]);
-    if (status === 'live') {
-      updateData('spaceParticipants', [...(data.spaceParticipants||[]), { id:Date.now()+1, spaceId:newSpace.id, userId:currentUser.id, joinedAt:new Date().toISOString(), leftAt:null }]);
-    }
-    setCreateModal(false);
-    if (status === 'live') setSelectedSpace(newSpace.id);
+    try {
+      const newSpace = await api.post('/spaces', {
+        title: form.title.trim(),
+        description: form.description || '',
+        type: form.type || 'audio',
+        scheduledAt: form.scheduledAt || null,
+      });
+      setCreateModal(false);
+      await loadSpaces();
+      // If no scheduled time, go live immediately
+      if (!form.scheduledAt) {
+        try {
+          await api.put(`/spaces/${newSpace.id}/live`, {});
+          await api.post(`/spaces/${newSpace.id}/join`);
+          await loadSpaces();
+        } catch (e) { /* space created, just not live yet */ }
+        setSelectedSpace(newSpace.id);
+        setTab('live');
+      } else {
+        setTab('scheduled');
+      }
+    } catch (e) { console.error('Create space error:', e); }
   };
 
   const tabs = [
     { id:'live', label:t.social.liveNow, count:liveSpaces.length, color:'text-red-400' },
-    { id:'upcoming', label:t.social.upcoming, count:upcomingSpaces.length, color:'text-blue-400' },
+    { id:'scheduled', label:t.social.upcoming, count:scheduledSpaces.length, color:'text-blue-400' },
     { id:'ended', label:t.social.ended, count:endedSpaces.length, color:'text-gray-400' },
   ];
 
-  const displaySpaces = tab==='live'?liveSpaces:tab==='upcoming'?upcomingSpaces:endedSpaces;
+  const displaySpaces = tab==='live'?liveSpaces:tab==='scheduled'?scheduledSpaces:endedSpaces;
 
   const SpaceCard = ({ space }) => {
-    const pCount = (data.spaceParticipants||[]).filter(p=>p.spaceId===space.id && !p.leftAt).length;
+    const pCount = space.participantCount || 0;
+    const hostName = space.host ? `${space.host.firstName} ${space.host.lastName}` : getUserName(space.hostId, data);
     return (
-      <div onClick={()=>setSelectedSpace(space.id)} className="card p-4 cursor-pointer hover:border-gold-500/30 border border-transparent transition-colors">
+      <div onClick={()=>setSelectedSpace(space.id)} className="card p-4 cursor-pointer hover:border-gold-500/30 border border-transparent transition-all hover:scale-[1.01]">
         <div className="flex items-start gap-3">
           <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${space.status==='live'?'bg-red-900/30 text-red-400':'bg-gold-500/10 text-gold-400'}`}>
             <Icon name={space.type==='video'?'video':'mic'} size={22}/>
+            {space.status==='live' && <span className="absolute w-3 h-3 rounded-full bg-red-500 animate-pulse -top-1 -right-1" style={{position:'relative',top:'-18px',right:'-2px'}}/>}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <h4 className="font-semibold text-white text-sm truncate">{space.title}</h4>
               {space.status==='live' && <span className="badge badge-red text-[9px] animate-pulse">LIVE</span>}
             </div>
-            <div className="text-xs text-gray-500 mt-0.5">{t.social.host}: {getUserName(space.hostId, data)}</div>
-            <div className="flex items-center gap-3 mt-1 text-[10px] text-gray-600">
-              <span><Icon name="users" size={11} className="inline mr-1"/>{pCount} {t.social.participants}</span>
+            <div className="text-xs text-gray-500 mt-0.5">{t.social.host}: {hostName}</div>
+            {space.description && <p className="text-xs text-gray-600 mt-0.5 truncate">{space.description}</p>}
+            <div className="flex items-center gap-3 mt-1.5 text-[10px] text-gray-600">
+              <span className="flex items-center gap-1"><Icon name="users" size={11}/>{pCount} {t.social.participants}</span>
               <span className="badge badge-blue text-[9px]">{space.type==='video'?t.social.videoSpace:t.social.audio}</span>
-              {space.scheduledAt && <span><Icon name="clock" size={11} className="inline mr-1"/>{space.scheduledAt}</span>}
+              {space.scheduledAt && space.status==='scheduled' && <span className="flex items-center gap-1"><Icon name="clock" size={11}/>{new Date(space.scheduledAt).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>}
+              {space.status==='live' && space.startedAt && <span className="text-red-400">Started {new Date(space.startedAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span>}
             </div>
           </div>
         </div>
@@ -4515,7 +4616,7 @@ const SpacesPage = ({ data, updateData, t, currentUser }) => {
 
   return (
     <div className="space-y-4 fade-in">
-      <div className="card p-4 flex justify-between items-center">
+      <div className="card p-4 flex flex-wrap justify-between items-center gap-2">
         <div className="flex gap-1">
           {tabs.map(tb=>(
             <button key={tb.id} onClick={()=>setTab(tb.id)} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab===tb.id?'bg-dark-700 text-white':'text-gray-500 hover:text-gray-300'}`}>
@@ -4527,7 +4628,7 @@ const SpacesPage = ({ data, updateData, t, currentUser }) => {
       </div>
 
       {displaySpaces.length===0
-        ? <div className="card"><EmptyState icon="video" message={t.social.noSpaces}/></div>
+        ? <div className="card"><EmptyState icon="video" message={tab==='live' ? (t.social.noSpaces || 'No live spaces right now') : tab==='scheduled' ? 'No scheduled spaces' : 'No ended spaces'}/></div>
         : <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{displaySpaces.map(s=><SpaceCard key={s.id} space={s}/>)}</div>
       }
 
@@ -4545,7 +4646,7 @@ const SpacesPage = ({ data, updateData, t, currentUser }) => {
         </div>
       </Modal>
 
-      <SpaceDetailModal space={activeSpace} isOpen={!!activeSpace} onClose={()=>setSelectedSpace(null)} data={data} updateData={updateData} currentUser={currentUser} t={t}/>
+      <SpaceDetailModal space={activeSpace} isOpen={!!activeSpace} onClose={()=>setSelectedSpace(null)} data={data} updateData={updateData} currentUser={currentUser} t={t} onRefresh={loadSpaces}/>
     </div>
   );
 };
