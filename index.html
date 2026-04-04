@@ -3099,22 +3099,45 @@ const Events = ({ data, updateData, t, currentUser }) => {
     } catch(err) { console.error('Cancel RSVP error:', err); }
   };
 
+  const getUserLocation = () => new Promise((resolve, reject) => {
+    if (!navigator.geolocation) return reject(new Error('Geolocation not supported'));
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      (err) => reject(err),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  });
+
   const handleCheckin = async (eventId) => {
     try {
-      await api.post(`/events/${eventId}/checkin`);
-      setActionMsg('Checked in!');
-      setTimeout(() => setActionMsg(''), 2000);
+      setActionMsg('Getting your location...');
+      let body = {};
+      try { body = await getUserLocation(); } catch(e) { /* location unavailable, server will decide */ }
+      const res = await api.post(`/events/${eventId}/checkin`, body);
+      setActionMsg(res.message || 'Checked in!');
+      setTimeout(() => setActionMsg(''), 3000);
       refreshEvents();
-    } catch(err) { console.error('Checkin error:', err); }
+    } catch(err) {
+      const msg = err?.message || err?.error || 'Check-in failed';
+      setActionMsg(msg);
+      setTimeout(() => setActionMsg(''), 4000);
+    }
   };
 
   const handleCheckout = async (eventId) => {
     try {
-      await api.post(`/events/${eventId}/checkout`);
-      setActionMsg('Checked out!');
-      setTimeout(() => setActionMsg(''), 2000);
+      setActionMsg('Getting your location...');
+      let body = {};
+      try { body = await getUserLocation(); } catch(e) { /* location unavailable, server will decide */ }
+      const res = await api.post(`/events/${eventId}/checkout`, body);
+      setActionMsg(res.message || 'Checked out!');
+      setTimeout(() => setActionMsg(''), 3000);
       refreshEvents();
-    } catch(err) { console.error('Checkout error:', err); }
+    } catch(err) {
+      const msg = err?.message || err?.error || 'Check-out failed';
+      setActionMsg(msg);
+      setTimeout(() => setActionMsg(''), 4000);
+    }
   };
 
   const viewRsvps = async (eventId) => {
@@ -3151,7 +3174,7 @@ const Events = ({ data, updateData, t, currentUser }) => {
 
   return (
     <div className="space-y-4 fade-in">
-      {actionMsg && <div className="fixed top-4 right-4 z-50 bg-green-900/90 text-green-300 px-4 py-2 rounded-lg text-sm font-medium shadow-lg animate-pulse">{actionMsg}</div>}
+      {actionMsg && <div className={`fixed top-4 right-4 z-50 px-4 py-2 rounded-lg text-sm font-medium shadow-lg ${actionMsg.includes('away') || actionMsg.includes('failed') || actionMsg.includes('enable GPS') ? 'bg-red-900/90 text-red-300' : actionMsg.includes('location') ? 'bg-blue-900/90 text-blue-300 animate-pulse' : 'bg-green-900/90 text-green-300'}`}>{actionMsg}</div>}
 
       <div className="card p-4 flex items-center justify-between flex-wrap gap-2">
         <div className="flex gap-1 bg-dark-900 rounded-lg p-1">
@@ -3218,12 +3241,12 @@ const Events = ({ data, updateData, t, currentUser }) => {
                   )}
                   {hasRsvp && !hasCheckin && isCheckable && (
                     <button onClick={()=>handleCheckin(e.id)} className="flex-1 text-center text-sm text-green-400 hover:text-green-300 font-medium py-1.5 rounded-lg hover:bg-green-900/20 transition-colors">
-                      Check In
+                      {e.lat ? '📍 ' : ''}Check In
                     </button>
                   )}
                   {hasCheckin && !hasCheckout && isCheckable && (
                     <button onClick={()=>handleCheckout(e.id)} className="flex-1 text-center text-sm text-purple-400 hover:text-purple-300 font-medium py-1.5 rounded-lg hover:bg-purple-900/20 transition-colors">
-                      Check Out
+                      {e.lat ? '📍 ' : ''}Check Out
                     </button>
                   )}
                   {hasRsvp && e.date >= today && (
@@ -3232,7 +3255,7 @@ const Events = ({ data, updateData, t, currentUser }) => {
                     </button>
                   )}
                   {isAdmin && <>
-                    <button onClick={()=>{setForm({...e, endDate: e.endDate||'', endTime: e.endTime||''});setModal('edit');}} className="flex-1 text-center text-sm text-gold-400 hover:text-gold-500 font-medium py-1">{t.common.edit}</button>
+                    <button onClick={()=>{setForm({...e, endDate: e.endDate||'', endTime: e.endTime||'', lat: e.lat||'', lng: e.lng||''});setModal('edit');}} className="flex-1 text-center text-sm text-gold-400 hover:text-gold-500 font-medium py-1">{t.common.edit}</button>
                     <button onClick={()=>setConfirm(e.id)} className="flex-1 text-center text-sm text-red-400 hover:text-red-500 font-medium py-1">{t.common.delete}</button>
                   </>}
                 </div>
@@ -3274,6 +3297,26 @@ const Events = ({ data, updateData, t, currentUser }) => {
             <Input label="End Time" type="time" value={form.endTime||''} onChange={v=>setForm(f=>({...f,endTime:v}))}/>
           </div>
           <Input label={t.events.location} value={form.location||''} onChange={v=>setForm(f=>({...f,location:v}))}/>
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1">GPS Coordinates (for check-in verification)</label>
+            <div className="flex gap-2 items-center">
+              <input type="number" step="any" placeholder="Latitude" value={form.lat||''} onChange={e=>setForm(f=>({...f,lat:parseFloat(e.target.value)||null}))}
+                className="flex-1 px-3 py-2 bg-dark-800 border border-dark-600 rounded-lg text-sm text-white placeholder-gray-600 focus:border-gold-500 outline-none"/>
+              <input type="number" step="any" placeholder="Longitude" value={form.lng||''} onChange={e=>setForm(f=>({...f,lng:parseFloat(e.target.value)||null}))}
+                className="flex-1 px-3 py-2 bg-dark-800 border border-dark-600 rounded-lg text-sm text-white placeholder-gray-600 focus:border-gold-500 outline-none"/>
+              <button type="button" onClick={()=>{
+                if (!navigator.geolocation) return;
+                navigator.geolocation.getCurrentPosition(
+                  (pos) => setForm(f=>({...f, lat: Math.round(pos.coords.latitude*1000000)/1000000, lng: Math.round(pos.coords.longitude*1000000)/1000000 })),
+                  () => {}, { enableHighAccuracy: true }
+                );
+              }} className="px-3 py-2 bg-blue-600/20 text-blue-400 rounded-lg text-xs font-medium hover:bg-blue-600/30 whitespace-nowrap" title="Use current GPS location">
+                📍 GPS
+              </button>
+            </div>
+            {form.lat && form.lng && <p className="text-[10px] text-green-400 mt-1">Location set: {form.lat}, {form.lng} - Check-in will require being within 150m</p>}
+            {!form.lat && <p className="text-[10px] text-gray-600 mt-1">Optional: Set coordinates to require physical presence for check-in</p>}
+          </div>
           <Select label={t.events.type} value={form.type||'worship'} onChange={v=>setForm(f=>({...f,type:v}))} options={typeOpts}/>
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-1">Event Photo</label>
@@ -5393,6 +5436,7 @@ const AnnouncementsPage = ({ data, updateData, t, currentUser }) => {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [priority, setPriority] = useState('info');
+  const [photo, setPhoto] = useState(null);
   const isAdmin = ['superadmin', 'admin'].includes(currentUser?.role);
   const anns = (data.announcements || []).filter(a => !a.deletedAt).sort((a, b) => {
     if (a.isPinned && !b.isPinned) return -1;
@@ -5403,9 +5447,9 @@ const AnnouncementsPage = ({ data, updateData, t, currentUser }) => {
   const handleSubmit = async () => {
     if (!title.trim() || !content.trim()) return;
     try {
-      const ann = await api.post('/community/announcements', { title, content, priority, isPinned: false });
+      const ann = await api.post('/community/announcements', { title, content, priority, isPinned: false, photo });
       updateData('announcements', [...(data.announcements || []), { ...ann, firstName: currentUser.firstName, lastName: currentUser.lastName, avatar: currentUser.avatar, seen: true }]);
-      setTitle(''); setContent(''); setPriority('info'); setShowForm(false);
+      setTitle(''); setContent(''); setPriority('info'); setPhoto(null); setShowForm(false);
     } catch(err) { console.error('Save announcement error:', err); }
   };
 
@@ -5430,9 +5474,16 @@ const AnnouncementsPage = ({ data, updateData, t, currentUser }) => {
               ))}
             </div>
           </div>
+          <div className="mb-3">
+            <label className="text-[10px] text-gray-500 block mb-1">Photo (optional)</label>
+            {photo && <img src={photo} className="w-full h-32 object-cover rounded-xl mb-2"/>}
+            <input type="file" accept="image/*" className="text-sm text-gray-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-gold-500/20 file:text-gold-400 hover:file:bg-gold-500/30 w-full"
+              onChange={e=>{const f=e.target.files?.[0]; if(!f||f.size>3*1024*1024)return; const r=new FileReader(); r.onload=()=>setPhoto(r.result); r.readAsDataURL(f);}}/>
+            {photo && <button onClick={()=>setPhoto(null)} className="text-xs text-red-400 hover:underline mt-1">Remove photo</button>}
+          </div>
           <div className="flex gap-2">
             <button onClick={handleSubmit} className="bg-gold-500 text-dark-900 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gold-400">{t.community.publish}</button>
-            <button onClick={() => setShowForm(false)} className="text-gray-400 px-4 py-2 text-sm hover:text-white">{t.common.cancel}</button>
+            <button onClick={() => {setShowForm(false); setPhoto(null);}} className="text-gray-400 px-4 py-2 text-sm hover:text-white">{t.common.cancel}</button>
           </div>
         </div>
       )}
@@ -5440,7 +5491,9 @@ const AnnouncementsPage = ({ data, updateData, t, currentUser }) => {
         {anns.map(a => {
           const author = (data.users || []).find(u => u.id === a.authorId);
           return (
-            <div key={a.id} className={`bg-dark-800 border border-dark-700 rounded-xl p-5 border-l-[3px] ${priorityColors[a.priority] || ''}`}>
+            <div key={a.id} className={`bg-dark-800 border border-dark-700 rounded-xl overflow-hidden border-l-[3px] ${priorityColors[a.priority] || ''}`}>
+              {a.photo && <img src={a.photo} className="w-full h-48 object-cover" alt={a.title}/>}
+              <div className="p-5">
               <div className="flex items-start justify-between">
                 <div>
                   <h3 className="text-white font-bold text-lg">{a.isPinned && '📌 '}{a.title}</h3>
@@ -5453,6 +5506,7 @@ const AnnouncementsPage = ({ data, updateData, t, currentUser }) => {
                     <button onClick={async() => {try{await api.del('/community/announcements/'+a.id);}catch(e){}updateData('announcements', (data.announcements || []).map(x => x.id === a.id ? { ...x, deletedAt: new Date().toISOString() } : x));}} className="text-xs text-gray-500 hover:text-red-400">{t.common.delete}</button>
                   </div>
                 )}
+              </div>
               </div>
             </div>
           );

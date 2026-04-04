@@ -70,17 +70,18 @@ module.exports = function(db) {
 
   // POST /api/events
   router.post('/', requireRole('superadmin', 'admin', 'ministry_leader'), (req, res) => {
-    const { title, description, date, time, endDate, endTime, location, type, recurring, photo } = req.body;
+    const { title, description, date, time, endDate, endTime, location, type, recurring, photo, lat, lng } = req.body;
     if (!title || !date) {
       return res.status(400).json({ error: 'Title and date required' });
     }
 
     const id = uuidv4();
     db.prepare(`
-      INSERT INTO events (id, title, description, date, time, endDate, endTime, location, type, recurring, photo, createdBy)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO events (id, title, description, date, time, endDate, endTime, location, type, recurring, photo, lat, lng, createdBy)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, title, description || null, date, time || null, endDate || null, endTime || null,
-           location || null, type || 'general', recurring ? 1 : 0, photo || null, req.user.id);
+           location || null, type || 'general', recurring ? 1 : 0, photo || null,
+           lat != null ? lat : null, lng != null ? lng : null, req.user.id);
 
     const event = db.prepare('SELECT * FROM events WHERE id = ?').get(id);
 
@@ -104,9 +105,9 @@ module.exports = function(db) {
       return res.status(403).json({ error: 'Can only edit your own events' });
     }
 
-    const { title, description, date, time, endDate, endTime, location, type, recurring, photo } = req.body;
+    const { title, description, date, time, endDate, endTime, location, type, recurring, photo, lat, lng } = req.body;
     db.prepare(`
-      UPDATE events SET title=?, description=?, date=?, time=?, endDate=?, endTime=?, location=?, type=?, recurring=?, photo=?, updatedAt=datetime('now')
+      UPDATE events SET title=?, description=?, date=?, time=?, endDate=?, endTime=?, location=?, type=?, recurring=?, photo=?, lat=?, lng=?, updatedAt=datetime('now')
       WHERE id = ?
     `).run(
       title || existing.title, description !== undefined ? description : existing.description,
@@ -116,6 +117,8 @@ module.exports = function(db) {
       location !== undefined ? location : existing.location,
       type || existing.type, recurring !== undefined ? (recurring ? 1 : 0) : existing.recurring,
       photo !== undefined ? photo : existing.photo,
+      lat !== undefined ? lat : existing.lat,
+      lng !== undefined ? lng : existing.lng,
       req.params.id
     );
 
@@ -167,7 +170,20 @@ module.exports = function(db) {
     res.json(rsvps);
   });
 
-  // POST /api/events/:id/checkin - Check in to event
+  // Helper: calculate distance between two lat/lng points in meters (Haversine)
+  function distanceMeters(lat1, lng1, lat2, lng2) {
+    const R = 6371000; // Earth radius in meters
+    const toRad = (deg) => deg * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2) * Math.sin(dLng/2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+
+  const CHECKIN_RADIUS_METERS = 150; // Must be within 150m of event location
+
+  // POST /api/events/:id/checkin - Check in to event (requires geolocation)
   router.post('/:id/checkin', (req, res) => {
     const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
     if (!event) return res.status(404).json({ error: 'Event not found' });
@@ -176,18 +192,34 @@ module.exports = function(db) {
     const rsvp = db.prepare('SELECT id FROM event_rsvps WHERE eventId = ? AND userId = ?').get(req.params.id, req.user.id);
     if (!rsvp) return res.status(400).json({ error: 'Must RSVP before checking in' });
 
+    // Verify geolocation if event has coordinates
+    const { lat, lng } = req.body || {};
+    if (event.lat != null && event.lng != null) {
+      if (lat == null || lng == null) {
+        return res.status(400).json({ error: 'Location required for check-in. Please enable GPS.' });
+      }
+      const dist = distanceMeters(lat, lng, event.lat, event.lng);
+      if (dist > CHECKIN_RADIUS_METERS) {
+        return res.status(400).json({
+          error: `You must be at the event location to check in. You are ${Math.round(dist)}m away (max ${CHECKIN_RADIUS_METERS}m).`,
+          distance: Math.round(dist),
+          maxDistance: CHECKIN_RADIUS_METERS
+        });
+      }
+    }
+
     try {
       db.prepare("INSERT INTO event_checkins (id, eventId, userId, type) VALUES (?, ?, ?, 'checkin')").run(
         uuidv4(), req.params.id, req.user.id
       );
-      res.status(201).json({ message: 'Checked in' });
+      res.status(201).json({ message: 'Checked in successfully!' });
     } catch (e) {
       if (e.message.includes('UNIQUE')) return res.json({ message: 'Already checked in' });
       throw e;
     }
   });
 
-  // POST /api/events/:id/checkout - Check out from event
+  // POST /api/events/:id/checkout - Check out from event (requires geolocation)
   router.post('/:id/checkout', (req, res) => {
     const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
     if (!event) return res.status(404).json({ error: 'Event not found' });
@@ -196,11 +228,27 @@ module.exports = function(db) {
     const checkin = db.prepare("SELECT id FROM event_checkins WHERE eventId = ? AND userId = ? AND type = 'checkin'").get(req.params.id, req.user.id);
     if (!checkin) return res.status(400).json({ error: 'Must check in before checking out' });
 
+    // Verify geolocation if event has coordinates
+    const { lat, lng } = req.body || {};
+    if (event.lat != null && event.lng != null) {
+      if (lat == null || lng == null) {
+        return res.status(400).json({ error: 'Location required for check-out. Please enable GPS.' });
+      }
+      const dist = distanceMeters(lat, lng, event.lat, event.lng);
+      if (dist > CHECKIN_RADIUS_METERS) {
+        return res.status(400).json({
+          error: `You must be at the event location to check out. You are ${Math.round(dist)}m away (max ${CHECKIN_RADIUS_METERS}m).`,
+          distance: Math.round(dist),
+          maxDistance: CHECKIN_RADIUS_METERS
+        });
+      }
+    }
+
     try {
       db.prepare("INSERT INTO event_checkins (id, eventId, userId, type) VALUES (?, ?, ?, 'checkout')").run(
         uuidv4(), req.params.id, req.user.id
       );
-      res.status(201).json({ message: 'Checked out' });
+      res.status(201).json({ message: 'Checked out successfully!' });
     } catch (e) {
       if (e.message.includes('UNIQUE')) return res.json({ message: 'Already checked out' });
       throw e;

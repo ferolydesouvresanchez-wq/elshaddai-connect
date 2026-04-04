@@ -372,14 +372,14 @@ module.exports = function(db) {
 
   // POST /api/community/announcements
   router.post('/announcements', requireRole('superadmin', 'admin'), (req, res) => {
-    const { title, content, priority, isPinned, attachmentUrl, ctaLabel, ctaUrl, expiresAt } = req.body;
+    const { title, content, priority, isPinned, attachmentUrl, ctaLabel, ctaUrl, expiresAt, photo } = req.body;
     if (!title || !content) return res.status(400).json({ error: 'title and content required' });
     const id = uuidv4();
     db.prepare(`
-      INSERT INTO announcements (id, title, content, priority, isPinned, authorId, attachmentUrl, ctaLabel, ctaUrl, expiresAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO announcements (id, title, content, priority, isPinned, authorId, attachmentUrl, ctaLabel, ctaUrl, expiresAt, photo)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, title, content, priority || 'info', isPinned ? 1 : 0, req.user.id,
-           attachmentUrl || null, ctaLabel || null, ctaUrl || null, expiresAt || null);
+           attachmentUrl || null, ctaLabel || null, ctaUrl || null, expiresAt || null, photo || null);
 
     const announcement = db.prepare('SELECT * FROM announcements WHERE id = ?').get(id);
 
@@ -399,14 +399,15 @@ module.exports = function(db) {
   router.put('/announcements/:id', requireRole('superadmin', 'admin'), (req, res) => {
     const existing = db.prepare('SELECT * FROM announcements WHERE id = ?').get(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Not found' });
-    const { title, content, priority, isPinned, attachmentUrl, ctaLabel, ctaUrl, expiresAt } = req.body;
-    db.prepare(`UPDATE announcements SET title=?, content=?, priority=?, isPinned=?, attachmentUrl=?, ctaLabel=?, ctaUrl=?, expiresAt=? WHERE id=?`).run(
+    const { title, content, priority, isPinned, attachmentUrl, ctaLabel, ctaUrl, expiresAt, photo } = req.body;
+    db.prepare(`UPDATE announcements SET title=?, content=?, priority=?, isPinned=?, attachmentUrl=?, ctaLabel=?, ctaUrl=?, expiresAt=?, photo=? WHERE id=?`).run(
       title || existing.title, content || existing.content, priority || existing.priority,
       isPinned !== undefined ? (isPinned ? 1 : 0) : existing.isPinned,
       attachmentUrl !== undefined ? attachmentUrl : existing.attachmentUrl,
       ctaLabel !== undefined ? ctaLabel : existing.ctaLabel,
       ctaUrl !== undefined ? ctaUrl : existing.ctaUrl,
-      expiresAt !== undefined ? expiresAt : existing.expiresAt, req.params.id
+      expiresAt !== undefined ? expiresAt : existing.expiresAt,
+      photo !== undefined ? photo : existing.photo, req.params.id
     );
     res.json(db.prepare('SELECT * FROM announcements WHERE id = ?').get(req.params.id));
   });

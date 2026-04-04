@@ -499,7 +499,7 @@ function initDatabase() {
     console.log('Migration: added status column to users, existing users set to approved');
   }
 
-  // Migration: add photo, endDate to events table
+  // Migration: add photo, endDate, lat, lng to events table
   const eventCols = db.prepare("PRAGMA table_info(events)").all().map(c => c.name);
   if (!eventCols.includes('photo')) {
     db.exec("ALTER TABLE events ADD COLUMN photo TEXT");
@@ -508,6 +508,18 @@ function initDatabase() {
   if (!eventCols.includes('endDate')) {
     db.exec("ALTER TABLE events ADD COLUMN endDate TEXT");
     console.log('Migration: added endDate column to events');
+  }
+  if (!eventCols.includes('lat')) {
+    db.exec("ALTER TABLE events ADD COLUMN lat REAL");
+    db.exec("ALTER TABLE events ADD COLUMN lng REAL");
+    console.log('Migration: added lat/lng columns to events');
+  }
+
+  // Migration: add photo column to announcements
+  const annCols = db.prepare("PRAGMA table_info(announcements)").all().map(c => c.name);
+  if (!annCols.includes('photo')) {
+    db.exec("ALTER TABLE announcements ADD COLUMN photo TEXT");
+    console.log('Migration: added photo column to announcements');
   }
 
   // Migration: create event_checkins table
