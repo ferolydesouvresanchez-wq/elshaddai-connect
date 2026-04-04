@@ -2407,25 +2407,25 @@ const CHURCH_SOCIALS = {
 const MemberDashboard = ({ data, updateData, t, currentUser }) => {
   const myMember = data.members.find(m => m.userId === currentUser?.id);
   const myGroups = data.groups.filter(g => g.memberIds?.includes(myMember?.id) || g.memberIds?.includes(currentUser?.id));
-  const myRsvps = (data.eventRsvps||[]).filter(r => r.userId === currentUser?.id);
-  const rsvpEventIds = myRsvps.map(r => r.eventId);
-  const pastEvents = data.events.filter(e => rsvpEventIds.includes(e.id) && e.date < today).slice(-5);
+  const myRsvpEvents = data.events.filter(e => e.myRsvp);
+  const pastEvents = myRsvpEvents.filter(e => e.date < today).slice(-5);
   const upcomingEvents = data.events.filter(e => e.date >= today).slice(0, 5);
   const followingIds = (data.follows||[]).filter(f => f.followerId === currentUser?.id && f.status === 'accepted').map(f => f.followingId);
   const feedPosts = (data.posts||[]).filter(p => followingIds.includes(p.userId) || p.userId === currentUser?.id)
     .sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5);
   const recentMembers = [...data.members].sort((a,b) => new Date(b.joinDate) - new Date(a.joinDate)).slice(0, 8);
   const [eventDetail, setEventDetail] = useState(null);
-  const [rsvpForm, setRsvpForm] = useState({ attending: true, reason: '' });
   const [rsvpMsg, setRsvpMsg] = useState('');
 
-  const handleRsvp = () => {
-    const rsvps = data.eventRsvps || [];
-    const existing = rsvps.filter(r => !(r.eventId === eventDetail?.id && r.userId === currentUser?.id));
-    const newRsvp = { id: Date.now(), eventId: eventDetail.id, userId: currentUser?.id, userName: `${currentUser?.firstName} ${currentUser?.lastName}`, attending: rsvpForm.attending, reason: rsvpForm.reason, createdAt: new Date().toISOString() };
-    updateData('eventRsvps', [...existing, newRsvp]);
-    setRsvpMsg('Response saved!');
-    setTimeout(() => setRsvpMsg(''), 2000);
+  const handleRsvp = async () => {
+    if (!eventDetail) return;
+    try {
+      await api.post(`/events/${eventDetail.id}/rsvp`);
+      setRsvpMsg('RSVP confirmed!');
+      setTimeout(() => setRsvpMsg(''), 2000);
+      const eventsRes = await api.get('/events?limit=200').catch(()=>[]);
+      if (Array.isArray(eventsRes)) updateData('events', eventsRes);
+    } catch(err) { console.error('RSVP error:', err); }
   };
 
   return (
@@ -2612,7 +2612,8 @@ const MemberDashboard = ({ data, updateData, t, currentUser }) => {
                 <button onClick={() => setEventDetail(null)} className="text-gray-500 hover:text-white"><Icon name="x" size={18}/></button>
               </div>
               <div className="space-y-2 text-sm text-gray-400 mb-4">
-                <div className="flex items-center gap-2"><Icon name="calendar" size={14}/> {formatDate(eventDetail.date)} {eventDetail.time && `• ${eventDetail.time}`}</div>
+                <div className="flex items-center gap-2"><Icon name="calendar" size={14}/> {formatDate(eventDetail.date)} {eventDetail.time && `• ${eventDetail.time}`}{eventDetail.endTime && ` - ${eventDetail.endTime}`}</div>
+                {eventDetail.endDate && eventDetail.endDate !== eventDetail.date && <div className="flex items-center gap-2"><Icon name="calendar" size={14}/> Ends: {formatDate(eventDetail.endDate)}</div>}
                 {eventDetail.location && <div className="flex items-center gap-2">📍 {eventDetail.location}</div>}
                 {eventDetail.type && <span className="badge badge-blue text-xs">{eventDetail.type}</span>}
               </div>
@@ -2621,43 +2622,28 @@ const MemberDashboard = ({ data, updateData, t, currentUser }) => {
               {/* RSVP Section */}
               {eventDetail.date >= today && (
                 <div className="border-t border-dark-700 pt-4">
-                  <h4 className="text-sm font-semibold text-white mb-3">Will you attend?</h4>
-                  {rsvpMsg ? <div className="bg-green-900/30 text-green-400 text-sm rounded-lg px-4 py-3 text-center">{rsvpMsg}</div> : <>
-                    <div className="flex gap-2 mb-3">
-                      <button onClick={() => setRsvpForm(f => ({...f, attending: true}))}
-                        className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors ${rsvpForm.attending ? 'bg-green-600 text-white' : 'bg-dark-700 text-gray-400 hover:bg-dark-600'}`}>
-                        ✓ I'll Attend
-                      </button>
-                      <button onClick={() => setRsvpForm(f => ({...f, attending: false}))}
-                        className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors ${!rsvpForm.attending ? 'bg-red-600 text-white' : 'bg-dark-700 text-gray-400 hover:bg-dark-600'}`}>
-                        ✗ Can't Attend
-                      </button>
-                    </div>
-                    {!rsvpForm.attending && (
-                      <textarea placeholder="Reason (optional)" value={rsvpForm.reason} onChange={e => setRsvpForm(f => ({...f, reason: e.target.value}))}
-                        className="w-full px-3 py-2 bg-dark-800 border border-dark-600 rounded-xl text-sm text-white placeholder-gray-600 mb-3" rows={2}/>
-                    )}
-                    <button onClick={handleRsvp} className="w-full py-2.5 bg-gold-500 text-dark-900 rounded-xl text-sm font-bold hover:bg-gold-400 transition-colors">
-                      Confirm Response
-                    </button>
-                  </>}
+                  {rsvpMsg ? <div className="bg-green-900/30 text-green-400 text-sm rounded-lg px-4 py-3 text-center">{rsvpMsg}</div> : (
+                    eventDetail.myRsvp
+                      ? <div className="text-center">
+                          <span className="badge badge-green mb-2">You're attending</span>
+                          {eventDetail.time && <div className="mt-2"><EventCountdown event={eventDetail}/></div>}
+                        </div>
+                      : <button onClick={handleRsvp} className="w-full py-2.5 bg-gold-500 text-dark-900 rounded-xl text-sm font-bold hover:bg-gold-400 transition-colors">
+                          RSVP - I'll Attend
+                        </button>
+                  )}
                 </div>
               )}
 
               {/* RSVP Summary */}
-              {(() => {
-                const er = (data.eventRsvps||[]).filter(r => r.eventId === eventDetail.id);
-                const attending = er.filter(r => r.attending);
-                const declined = er.filter(r => !r.attending);
-                return er.length > 0 && (
-                  <div className="border-t border-dark-700 pt-4 mt-4">
-                    <div className="flex gap-4 text-xs mb-2">
-                      <span className="text-green-400">✓ {attending.length} attending</span>
-                      <span className="text-red-400">✗ {declined.length} declined</span>
-                    </div>
+              {eventDetail.rsvpCount > 0 && (
+                <div className="border-t border-dark-700 pt-4 mt-4">
+                  <div className="flex gap-4 text-xs mb-2">
+                    <span className="text-green-400">✓ {eventDetail.rsvpCount} RSVPs</span>
+                    {eventDetail.checkinCount > 0 && <span className="text-blue-400">📍 {eventDetail.checkinCount} checked in</span>}
                   </div>
-                );
-              })()}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -3007,24 +2993,61 @@ const Attendance = ({ data, updateData, t }) => {
 // =====================================================================
 // EVENTS
 // =====================================================================
+const EventCountdown = ({ event }) => {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const eventStart = new Date(`${event.date}T${event.time || '00:00'}`);
+  const eventEnd = event.endDate
+    ? new Date(`${event.endDate}T${event.endTime || '23:59'}`)
+    : event.endTime
+      ? new Date(`${event.date}T${event.endTime}`)
+      : null;
+
+  const isLive = now >= eventStart && (!eventEnd || now <= eventEnd);
+  const isUpcoming = now < eventStart;
+  const isPast = eventEnd ? now > eventEnd : now > eventStart && !event.time;
+
+  if (isPast) return <span className="text-xs text-gray-500">Event ended</span>;
+
+  if (isLive) {
+    const remaining = eventEnd ? eventEnd - now : 0;
+    if (remaining > 0) {
+      const h = Math.floor(remaining / 3600000);
+      const m = Math.floor((remaining % 3600000) / 60000);
+      return <span className="text-xs text-green-400 font-medium animate-pulse">LIVE - {h}h {m}m remaining</span>;
+    }
+    return <span className="text-xs text-green-400 font-medium animate-pulse">LIVE NOW</span>;
+  }
+
+  if (isUpcoming) {
+    const diff = eventStart - now;
+    const days = Math.floor(diff / 86400000);
+    const h = Math.floor((diff % 86400000) / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    const s = Math.floor((diff % 60000) / 1000);
+    if (days > 0) return <span className="text-xs text-blue-400 font-medium">{days}d {h}h {m}m</span>;
+    return <span className="text-xs text-gold-400 font-medium">{h}h {m}m {s}s</span>;
+  }
+  return null;
+};
+
 const Events = ({ data, updateData, t, currentUser }) => {
   const [modal, setModal] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [form, setForm] = useState({});
   const [tab, setTab] = useState('upcoming');
-  const [rsvpModal, setRsvpModal] = useState(null);
-  const [rsvpForm, setRsvpForm] = useState({ attending: true, reason: '' });
   const [rsvpViewEvent, setRsvpViewEvent] = useState(null);
-  const [rsvpMsg, setRsvpMsg] = useState('');
+  const [rsvpViewData, setRsvpViewData] = useState([]);
+  const [actionMsg, setActionMsg] = useState('');
   const isAdmin = ['superadmin','admin'].includes(currentUser?.role);
 
   const upcoming = data.events.filter(e=>e.date>=today).sort((a,b)=>a.date.localeCompare(b.date));
   const past = data.events.filter(e=>e.date<today).sort((a,b)=>b.date.localeCompare(a.date));
   const shown = tab==='upcoming'?upcoming:past;
-
-  const rsvps = data.eventRsvps || [];
-  const getRsvpForEvent = (eventId) => rsvps.filter(r => r.eventId === eventId);
-  const getMyRsvp = (eventId) => rsvps.find(r => r.eventId === eventId && r.userId === currentUser?.id);
 
   const typeColors = { worship:'badge-blue', meeting:'badge-purple', outreach:'badge-green', special:'badge-yellow', youth:'badge-red', prayer:'badge-gray' };
   const typeLabel = (type) => {
@@ -3032,8 +3055,15 @@ const Events = ({ data, updateData, t, currentUser }) => {
     return m[type]||type;
   };
 
+  const refreshEvents = async () => {
+    try {
+      const eventsRes = await api.get('/events?limit=200');
+      if (Array.isArray(eventsRes)) updateData('events', eventsRes);
+    } catch(e) {}
+  };
+
   const openAdd = () => {
-    setForm({ title:'', date:today, time:'10:00', location:'', description:'', type:'worship' });
+    setForm({ title:'', date:today, time:'10:00', endDate:'', endTime:'', location:'', description:'', type:'worship', photo: null });
     setModal('add');
   };
 
@@ -3051,23 +3081,53 @@ const Events = ({ data, updateData, t, currentUser }) => {
     } catch(err) { console.error('Save event error:', err); }
   };
 
-  const handleRsvp = async () => {
+  const handleRsvp = async (eventId) => {
     try {
-      await api.post(`/community/events/${rsvpModal}/rsvp`);
-      const existing = rsvps.filter(r => !(r.eventId === rsvpModal && r.userId === currentUser?.id));
-      const newRsvp = { id: Date.now(), eventId: rsvpModal, userId: currentUser?.id, userName: `${currentUser?.firstName} ${currentUser?.lastName}`, attending: rsvpForm.attending, reason: rsvpForm.reason, createdAt: new Date().toISOString() };
-      updateData('eventRsvps', [...existing, newRsvp]);
-      setRsvpMsg(t.events.rsvpSubmitted);
-      setTimeout(() => { setRsvpModal(null); setRsvpMsg(''); }, 1200);
+      await api.post(`/events/${eventId}/rsvp`);
+      setActionMsg('RSVP confirmed!');
+      setTimeout(() => setActionMsg(''), 2000);
+      refreshEvents();
     } catch(err) { console.error('RSVP error:', err); }
   };
 
+  const handleCancelRsvp = async (eventId) => {
+    try {
+      await api.del(`/events/${eventId}/rsvp`);
+      setActionMsg('RSVP cancelled');
+      setTimeout(() => setActionMsg(''), 2000);
+      refreshEvents();
+    } catch(err) { console.error('Cancel RSVP error:', err); }
+  };
+
+  const handleCheckin = async (eventId) => {
+    try {
+      await api.post(`/events/${eventId}/checkin`);
+      setActionMsg('Checked in!');
+      setTimeout(() => setActionMsg(''), 2000);
+      refreshEvents();
+    } catch(err) { console.error('Checkin error:', err); }
+  };
+
+  const handleCheckout = async (eventId) => {
+    try {
+      await api.post(`/events/${eventId}/checkout`);
+      setActionMsg('Checked out!');
+      setTimeout(() => setActionMsg(''), 2000);
+      refreshEvents();
+    } catch(err) { console.error('Checkout error:', err); }
+  };
+
+  const viewRsvps = async (eventId) => {
+    try {
+      const rsvps = await api.get(`/events/${eventId}/rsvps`);
+      setRsvpViewData(Array.isArray(rsvps) ? rsvps : []);
+      setRsvpViewEvent(eventId);
+    } catch(e) { setRsvpViewData([]); setRsvpViewEvent(eventId); }
+  };
+
   const exportEventsCSV = () => {
-    const headers = ['Title','Date','Time','Location','Type','Description','Attending','Declined'];
-    const rows = shown.map(e => {
-      const er = getRsvpForEvent(e.id);
-      return [e.title, e.date, e.time||'', e.location||'', e.type, e.description||'', er.filter(r=>r.attending).length, er.filter(r=>!r.attending).length];
-    });
+    const headers = ['Title','Date','Time','End Date','End Time','Location','Type','Description','RSVPs','Check-ins'];
+    const rows = shown.map(e => [e.title, e.date, e.time||'', e.endDate||'', e.endTime||'', e.location||'', e.type, e.description||'', e.rsvpCount||0, e.checkinCount||0]);
     const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -3082,8 +3142,17 @@ const Events = ({ data, updateData, t, currentUser }) => {
 
   const eventIcons = { worship:'🕊️', meeting:'📋', outreach:'🤝', special:'⭐', youth:'🎯', prayer:'🙏' };
 
+  // Determine check-in eligibility: event is today or within event date range
+  const canCheckin = (e) => {
+    const eventDate = e.date;
+    const endDate = e.endDate || e.date;
+    return today >= eventDate && today <= endDate;
+  };
+
   return (
     <div className="space-y-4 fade-in">
+      {actionMsg && <div className="fixed top-4 right-4 z-50 bg-green-900/90 text-green-300 px-4 py-2 rounded-lg text-sm font-medium shadow-lg animate-pulse">{actionMsg}</div>}
+
       <div className="card p-4 flex items-center justify-between flex-wrap gap-2">
         <div className="flex gap-1 bg-dark-900 rounded-lg p-1">
           <button onClick={()=>setTab('upcoming')} className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab==='upcoming'?'bg-dark-700 text-gold-400':'text-gray-500'}`}>
@@ -3103,43 +3172,67 @@ const Events = ({ data, updateData, t, currentUser }) => {
         ? <div className="card"><EmptyState icon="calendar" message={t.events.noEvents}/></div>
         : <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {shown.map(e=>{
-              const er = getRsvpForEvent(e.id);
-              const myRsvp = getMyRsvp(e.id);
-              const attendCount = er.filter(r=>r.attending).length;
-              const declineCount = er.filter(r=>!r.attending).length;
+              const hasRsvp = !!e.myRsvp;
+              const hasCheckin = !!e.myCheckin;
+              const hasCheckout = !!e.myCheckout;
+              const isCheckable = canCheckin(e);
               return (
               <div key={e.id} className="card hover:shadow-lg transition-shadow border border-dark-700 overflow-hidden">
-                {e.photo && <img src={e.photo} className="w-full h-40 object-cover"/>}
+                {e.photo && <img src={e.photo} className="w-full h-40 object-cover" alt={e.title}/>}
                 <div className="p-4">
                 <div className="flex items-start justify-between mb-3">
                   <span className="text-2xl">{eventIcons[e.type]||'📅'}</span>
-                  <span className={`badge ${typeColors[e.type]||'badge-gray'}`}>{typeLabel(e.type)}</span>
+                  <div className="flex flex-col items-end gap-1">
+                    <span className={`badge ${typeColors[e.type]||'badge-gray'}`}>{typeLabel(e.type)}</span>
+                    {e.time && <EventCountdown event={e}/>}
+                  </div>
                 </div>
                 <h4 className="font-bold text-white mb-1">{e.title}</h4>
                 {e.description && <p className="text-sm text-gray-500 mb-3 line-clamp-2">{e.description}</p>}
                 <div className="space-y-1.5 text-sm text-gray-400">
-                  <div className="flex items-center gap-2"><Icon name="calendar" size={13} className="text-gray-500"/>{formatDate(e.date)}</div>
-                  {e.time && <div className="flex items-center gap-2"><span className="text-gray-500 text-xs">🕐</span>{e.time}</div>}
+                  <div className="flex items-center gap-2"><Icon name="calendar" size={13} className="text-gray-500"/>{formatDate(e.date)}{e.endDate && e.endDate !== e.date && <span className="text-gray-600">- {formatDate(e.endDate)}</span>}</div>
+                  {e.time && <div className="flex items-center gap-2"><span className="text-gray-500 text-xs">🕐</span>{e.time}{e.endTime && <span className="text-gray-600">- {e.endTime}</span>}</div>}
                   {e.location && <div className="flex items-center gap-2"><span className="text-gray-500 text-xs">📍</span>{e.location}</div>}
                 </div>
-                {/* RSVP Summary */}
+
+                {/* RSVP & Checkin Summary */}
                 <div className="flex items-center gap-3 mt-3 text-xs">
-                  <span className="text-green-400">✓ {attendCount} {t.events.attending}</span>
-                  <span className="text-red-400">✗ {declineCount} {t.events.notAttending}</span>
-                  {isAdmin && er.length > 0 && <button onClick={()=>setRsvpViewEvent(e.id)} className="text-gold-400 hover:underline ml-auto">{t.common.actions}</button>}
+                  <span className="text-green-400">✓ {e.rsvpCount || 0} RSVPs</span>
+                  {e.checkinCount > 0 && <span className="text-blue-400">📍 {e.checkinCount} checked in</span>}
+                  {isAdmin && e.rsvpCount > 0 && <button onClick={()=>viewRsvps(e.id)} className="text-gold-400 hover:underline ml-auto">View</button>}
                 </div>
-                {/* My RSVP status */}
-                {myRsvp && <div className="mt-2 text-xs">
-                  <span className={`badge ${myRsvp.attending?'badge-green':'badge-red'}`}>
-                    {t.events.rsvpYourStatus}: {myRsvp.attending ? t.events.attending : t.events.notAttending}
-                  </span>
+
+                {/* My RSVP + Check-in Status */}
+                {hasRsvp && <div className="mt-2 flex flex-wrap gap-1.5">
+                  <span className="badge badge-green text-xs">RSVP'd</span>
+                  {hasCheckin && <span className="badge badge-blue text-xs">Checked In</span>}
+                  {hasCheckout && <span className="badge badge-purple text-xs">Checked Out</span>}
                 </div>}
-                <div className="flex gap-2 mt-4 pt-3 border-t border-dark-700">
-                  {e.date >= today && <button onClick={()=>{setRsvpForm({ attending: true, reason: '' }); setRsvpModal(e.id); setRsvpMsg('');}} className="flex-1 text-center text-sm text-blue-400 hover:text-blue-300 font-medium py-1">
-                    {myRsvp ? t.events.rsvpChange : t.community.rsvp}
-                  </button>}
+
+                {/* Action Buttons */}
+                <div className="flex flex-wrap gap-2 mt-4 pt-3 border-t border-dark-700">
+                  {e.date >= today && !hasRsvp && (
+                    <button onClick={()=>handleRsvp(e.id)} className="flex-1 text-center text-sm text-blue-400 hover:text-blue-300 font-medium py-1.5 rounded-lg hover:bg-blue-900/20 transition-colors">
+                      {t.community.rsvp}
+                    </button>
+                  )}
+                  {hasRsvp && !hasCheckin && isCheckable && (
+                    <button onClick={()=>handleCheckin(e.id)} className="flex-1 text-center text-sm text-green-400 hover:text-green-300 font-medium py-1.5 rounded-lg hover:bg-green-900/20 transition-colors">
+                      Check In
+                    </button>
+                  )}
+                  {hasCheckin && !hasCheckout && isCheckable && (
+                    <button onClick={()=>handleCheckout(e.id)} className="flex-1 text-center text-sm text-purple-400 hover:text-purple-300 font-medium py-1.5 rounded-lg hover:bg-purple-900/20 transition-colors">
+                      Check Out
+                    </button>
+                  )}
+                  {hasRsvp && e.date >= today && (
+                    <button onClick={()=>handleCancelRsvp(e.id)} className="text-center text-xs text-red-400 hover:text-red-300 py-1.5 px-2">
+                      Cancel RSVP
+                    </button>
+                  )}
                   {isAdmin && <>
-                    <button onClick={()=>{setForm({...e});setModal('edit');}} className="flex-1 text-center text-sm text-gold-400 hover:text-gold-500 font-medium py-1">{t.common.edit}</button>
+                    <button onClick={()=>{setForm({...e, endDate: e.endDate||'', endTime: e.endTime||''});setModal('edit');}} className="flex-1 text-center text-sm text-gold-400 hover:text-gold-500 font-medium py-1">{t.common.edit}</button>
                     <button onClick={()=>setConfirm(e.id)} className="flex-1 text-center text-sm text-red-400 hover:text-red-500 font-medium py-1">{t.common.delete}</button>
                   </>}
                 </div>
@@ -3148,57 +3241,37 @@ const Events = ({ data, updateData, t, currentUser }) => {
           </div>
       }
 
-      {/* RSVP Modal */}
-      <Modal isOpen={!!rsvpModal} onClose={()=>setRsvpModal(null)} title={t.community.rsvp} maxWidth="max-w-sm">
-        {rsvpMsg ? <div className="bg-green-900/30 text-green-400 text-sm rounded-lg px-4 py-3 text-center">{rsvpMsg}</div> : <>
-          <div className="flex gap-2 mb-4">
-            <button onClick={()=>setRsvpForm(f=>({...f, attending:true}))}
-              className={`flex-1 py-3 rounded-lg text-sm font-bold transition-all border-2 ${rsvpForm.attending ? 'border-green-500 bg-green-900/30 text-green-400' : 'border-dark-600 text-gray-500'}`}>
-              ✓ {t.events.rsvpAttending}
-            </button>
-            <button onClick={()=>setRsvpForm(f=>({...f, attending:false}))}
-              className={`flex-1 py-3 rounded-lg text-sm font-bold transition-all border-2 ${!rsvpForm.attending ? 'border-red-500 bg-red-900/30 text-red-400' : 'border-dark-600 text-gray-500'}`}>
-              ✗ {t.events.rsvpNotAttending}
-            </button>
-          </div>
-          {!rsvpForm.attending && <Textarea label={t.events.rsvpReason} value={rsvpForm.reason} onChange={v=>setRsvpForm(f=>({...f,reason:v}))} rows={2} className="mb-3"/>}
-          <Btn variant="gold" onClick={handleRsvp} className="w-full">{t.common.confirm}</Btn>
-        </>}
-      </Modal>
-
       {/* RSVP View Modal (admin) */}
-      <Modal isOpen={!!rsvpViewEvent} onClose={()=>setRsvpViewEvent(null)} title={`${t.events.rsvpAttendees} / ${t.events.rsvpDeclined}`}>
-        {rsvpViewEvent && (() => {
-          const er = getRsvpForEvent(rsvpViewEvent);
-          const att = er.filter(r=>r.attending);
-          const dec = er.filter(r=>!r.attending);
-          return <div className="space-y-3">
-            <div>
-              <h4 className="text-green-400 font-semibold text-sm mb-2">✓ {t.events.rsvpAttendees} ({att.length})</h4>
-              {att.length===0 ? <p className="text-xs text-gray-500">{t.common.noData}</p> : att.map(r=>(
-                <div key={r.id} className="flex items-center gap-2 py-1 text-sm text-gray-300"><Icon name="check" size={14} className="text-green-400"/>{r.userName}</div>
-              ))}
-            </div>
-            <div className="border-t border-dark-700 pt-3">
-              <h4 className="text-red-400 font-semibold text-sm mb-2">✗ {t.events.rsvpDeclined} ({dec.length})</h4>
-              {dec.length===0 ? <p className="text-xs text-gray-500">{t.common.noData}</p> : dec.map(r=>(
-                <div key={r.id} className="py-1.5 text-sm">
-                  <div className="flex items-center gap-2 text-gray-300"><Icon name="x" size={14} className="text-red-400"/>{r.userName}</div>
-                  {r.reason && <p className="text-xs text-gray-500 ml-6 mt-0.5">{r.reason}</p>}
-                  {!r.reason && <p className="text-xs text-gray-600 ml-6 mt-0.5 italic">{t.events.noReason}</p>}
+      <Modal isOpen={!!rsvpViewEvent} onClose={()=>setRsvpViewEvent(null)} title="Event RSVPs">
+        {rsvpViewData.length === 0
+          ? <p className="text-sm text-gray-500">{t.common.noData}</p>
+          : <div className="space-y-2">
+              {rsvpViewData.map(r => (
+                <div key={r.id} className="flex items-center gap-3 py-2 border-b border-dark-700 last:border-0">
+                  {r.avatar
+                    ? <img src={r.avatar} className="w-8 h-8 rounded-full object-cover"/>
+                    : <div className="w-8 h-8 rounded-full bg-dark-600 flex items-center justify-center text-xs text-gray-400">{(r.firstName||'?')[0]}</div>}
+                  <div>
+                    <div className="text-sm text-white font-medium">{r.firstName} {r.lastName}</div>
+                    <div className="text-xs text-gray-500">{new Date(r.createdAt).toLocaleDateString()}</div>
+                  </div>
+                  <Icon name="check" size={14} className="text-green-400 ml-auto"/>
                 </div>
               ))}
             </div>
-          </div>;
-        })()}
+        }
       </Modal>
 
       <Modal isOpen={!!modal} onClose={()=>setModal(null)} title={modal==='add'?t.events.add:t.events.edit}>
         <div className="space-y-3">
           <Input label={t.events.name} value={form.title||''} onChange={v=>setForm(f=>({...f,title:v}))} required/>
           <div className="grid grid-cols-2 gap-3">
-            <Input label={t.events.date} type="date" value={form.date||''} onChange={v=>setForm(f=>({...f,date:v}))} required/>
-            <Input label={t.events.time} type="time" value={form.time||''} onChange={v=>setForm(f=>({...f,time:v}))}/>
+            <Input label="Start Date" type="date" value={form.date||''} onChange={v=>setForm(f=>({...f,date:v}))} required/>
+            <Input label="Start Time" type="time" value={form.time||''} onChange={v=>setForm(f=>({...f,time:v}))}/>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="End Date" type="date" value={form.endDate||''} onChange={v=>setForm(f=>({...f,endDate:v}))}/>
+            <Input label="End Time" type="time" value={form.endTime||''} onChange={v=>setForm(f=>({...f,endTime:v}))}/>
           </div>
           <Input label={t.events.location} value={form.location||''} onChange={v=>setForm(f=>({...f,location:v}))}/>
           <Select label={t.events.type} value={form.type||'worship'} onChange={v=>setForm(f=>({...f,type:v}))} options={typeOpts}/>
@@ -7128,7 +7201,7 @@ function App() {
   }, [themeKey]);
 
   // Keys that persist to backend settings API
-  const PERSISTED_SETTINGS = ['bannerPhotos', 'bannerPositions', 'userPermissions', 'rolePermissions', 'eventRsvps', 'themePreference'];
+  const PERSISTED_SETTINGS = ['bannerPhotos', 'bannerPositions', 'userPermissions', 'rolePermissions', 'themePreference'];
 
   const updateData = useCallback((key, value) => {
     setData(prev => ({ ...prev, [key]: value }));
@@ -7226,7 +7299,6 @@ function App() {
         bannerPositions: settingsRes.bannerPositions || {},
         userPermissions: settingsRes.userPermissions || {},
         rolePermissions: settingsRes.rolePermissions || prev.rolePermissions,
-        eventRsvps: settingsRes.eventRsvps || [],
         themePreference: settingsRes.themePreference || null,
       }));
     } catch (err) {

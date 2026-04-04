@@ -499,6 +499,30 @@ function initDatabase() {
     console.log('Migration: added status column to users, existing users set to approved');
   }
 
+  // Migration: add photo, endDate to events table
+  const eventCols = db.prepare("PRAGMA table_info(events)").all().map(c => c.name);
+  if (!eventCols.includes('photo')) {
+    db.exec("ALTER TABLE events ADD COLUMN photo TEXT");
+    console.log('Migration: added photo column to events');
+  }
+  if (!eventCols.includes('endDate')) {
+    db.exec("ALTER TABLE events ADD COLUMN endDate TEXT");
+    console.log('Migration: added endDate column to events');
+  }
+
+  // Migration: create event_checkins table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS event_checkins (
+      id TEXT PRIMARY KEY,
+      eventId TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      userId TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      type TEXT NOT NULL CHECK(type IN ('checkin','checkout')),
+      checkedAt TEXT DEFAULT (datetime('now')),
+      UNIQUE(eventId, userId, type)
+    );
+    CREATE INDEX IF NOT EXISTS idx_event_checkins ON event_checkins(eventId);
+  `);
+
   // Seed default admin user if no users exist
   const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
   if (userCount.count === 0) {
