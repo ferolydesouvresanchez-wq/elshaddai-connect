@@ -69,7 +69,7 @@
       .sidebar-desktop { display: none !important; }
       .mobile-bottom-nav { display: flex !important; }
       .header-mobile-compact .header-title-text { font-size: 16px !important; }
-      .header-mobile-compact .header-badge { display: none !important; }
+      .header-mobile-compact .header-badge { display: inline-flex !important; font-size: 9px !important; padding: 1px 6px !important; }
       .main-content-area { padding: 12px !important; padding-bottom: 80px !important; }
     }
     @media (min-width: 769px) {
@@ -166,7 +166,6 @@ const TR = {
       accounts:"User Accounts", registeredUsers:"Registered Users", noAccounts:"No registered users yet",
       makeAdmin:"Make Admin", makeMember:"Make Member", linkedMember:"Linked Profile",
       profileUpdated:"Profile updated!", passwordChanged:"Password changed!",
-      adminHint:"Default: admin@elshaddai.com / admin123",
       address:"Address", birthDate:"Birth Date", phone:"Phone", email:"Email",
       orSeparator:"or", gender:"Gender", deleteUser:"Delete this user account?",
       registeredOn:"Registered", role:"Role", manageUsers:"Manage Users",
@@ -367,7 +366,6 @@ const TR = {
       accounts:"Cuentas de Usuario", registeredUsers:"Usuarios Registrados", noAccounts:"No hay usuarios registrados",
       makeAdmin:"Hacer Admin", makeMember:"Hacer Miembro", linkedMember:"Perfil Vinculado",
       profileUpdated:"¡Perfil actualizado!", passwordChanged:"¡Contraseña cambiada!",
-      adminHint:"Por defecto: admin@elshaddai.com / admin123",
       address:"Dirección", birthDate:"Fecha de Nacimiento", phone:"Teléfono", email:"Correo",
       orSeparator:"o", gender:"Género", deleteUser:"¿Eliminar esta cuenta?",
       registeredOn:"Registrado", role:"Rol", manageUsers:"Gestionar Usuarios",
@@ -568,7 +566,6 @@ const TR = {
       accounts:"Comptes Utilisateurs", registeredUsers:"Utilisateurs Enregistrés", noAccounts:"Aucun utilisateur enregistré",
       makeAdmin:"Rendre Admin", makeMember:"Rendre Membre", linkedMember:"Profil Lié",
       profileUpdated:"Profil mis à jour!", passwordChanged:"Mot de passe changé!",
-      adminHint:"Par défaut: admin@elshaddai.com / admin123",
       address:"Adresse", birthDate:"Date de Naissance", phone:"Téléphone", email:"Email",
       orSeparator:"ou", gender:"Genre", deleteUser:"Supprimer ce compte?",
       registeredOn:"Inscrit le", role:"Rôle", manageUsers:"Gérer les Utilisateurs",
@@ -769,7 +766,6 @@ const TR = {
       accounts:"Kont Itilizatè", registeredUsers:"Itilizatè Anrejistre", noAccounts:"Pa gen itilizatè anrejistre",
       makeAdmin:"Fè Admin", makeMember:"Fè Manm", linkedMember:"Pwofil Konekte",
       profileUpdated:"Pwofil aktyalize!", passwordChanged:"Modpas chanje!",
-      adminHint:"Pa defo: admin@elshaddai.com / admin123",
       address:"Adrès", birthDate:"Dat Nesans", phone:"Telefòn", email:"Imel",
       orSeparator:"oswa", gender:"Sèks", deleteUser:"Efase kont sa?",
       registeredOn:"Anrejistre", role:"Wòl", manageUsers:"Jere Itilizatè",
@@ -961,7 +957,7 @@ const today = new Date().toISOString().split('T')[0];
 
 const EMPTY_DATA = {
   users: [
-    { id: 1, email: "admin@elshaddai.com", phone: "", password: "admin123", firstName: "Admin", lastName: "Church", role: "superadmin", memberId: null, createdAt: today, status: "approved", emailVerified: true, phoneVerified: true, registrationMethod: "email", verificationCode: null, assignedGroupId: null }
+    { id: 1, email: "", phone: "", firstName: "Admin", lastName: "Church", role: "superadmin", memberId: null, createdAt: today, status: "approved" }
   ],
   members: [],
   events: [],
@@ -1569,7 +1565,6 @@ const AuthScreen = ({ t, lang, setLang, onLogin, data, updateData }) => {
             <p className="text-center text-sm text-gray-500">
               {t.auth.dontHave} <button onClick={()=>{setMode('register');setError('');}} className="text-gold-400 font-semibold hover:underline">{t.auth.register}</button>
             </p>
-            <p className="text-center text-xs text-gray-600 mt-2">{t.auth.adminHint}</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -4771,97 +4766,354 @@ const SpacesPage = ({ data, updateData, t, currentUser }) => {
 // RANKING (Module 4B)
 // =====================================================================
 const RankingPage = ({ data, updateData, t, currentUser }) => {
-  const [period, setPeriod] = useState('allTime');
-  const [groupFilter, setGroupFilter] = useState('all');
+  const [period, setPeriod] = useState('all');
+  const [tab, setTab] = useState('leaderboard'); // leaderboard | myRank | admin
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [myRank, setMyRank] = useState(null);
+  const [myDash, setMyDash] = useState(null);
+  const [adminMembers, setAdminMembers] = useState([]);
+  const [adjustForm, setAdjustForm] = useState(null);
+  const [adjustments, setAdjustments] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState('');
+  const isAdmin = ['superadmin', 'admin'].includes(currentUser?.role);
 
-  const now = new Date();
-  const weekStart = new Date(now); weekStart.setDate(now.getDate()-now.getDay());
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const TIERS = [
+    { name:'seed', min:0, max:99, icon:'🌱', label:'Seed' },
+    { name:'sprout', min:100, max:299, icon:'🌿', label:'Sprout' },
+    { name:'builder', min:300, max:599, icon:'🔨', label:'Builder' },
+    { name:'faithful', min:600, max:999, icon:'⭐', label:'Faithful' },
+    { name:'pillar', min:1000, max:1999, icon:'🏛️', label:'Pillar' },
+    { name:'champion', min:2000, max:3999, icon:'🏆', label:'Champion' },
+    { name:'legend', min:4000, max:Infinity, icon:'👑', label:'Legend' },
+  ];
+  const getTier = (pts) => TIERS.find(t => pts >= t.min && pts <= t.max) || TIERS[0];
 
-  const userStars = {};
-  (data.stars||[]).forEach(s => {
-    const d = new Date(s.createdAt);
-    const inPeriod = period==='allTime' || (period==='thisWeek' && d>=weekStart) || (period==='thisMonth' && d>=monthStart);
-    if (inPeriod) {
-      userStars[s.toUserId] = (userStars[s.toUserId]||0) + s.count;
-    }
-  });
+  const ACTION_LABELS = {
+    rsvp: 'RSVP to event', checkin_ontime: 'Check-in (on time)', checkin_late: 'Check-in (late)',
+    checkin_verylate: 'Check-in (very late)', walkin_checkin: 'Walk-in check-in', checkout: 'Check-out',
+    full_attendance: 'Full attendance bonus', missed_event: 'Missed event', daily_login: 'Daily login',
+    streak_7: '7-day streak bonus', streak_30: '30-day streak bonus', publish_post: 'Published post',
+    comment: 'Comment', like: 'Reaction', share: 'Share/repost', follow: 'Followed someone',
+    followed: 'Gained a follower', join_group: 'Joined group', group_activity: 'Group activity',
+    invite_member: 'Invited member', volunteer: 'Volunteered', volunteer_complete: 'Completed volunteer',
+    ministry_leader: 'Ministry leader bonus', profile_complete: 'Profile completed',
+    social_connect: 'Social connected', banner_set: 'Banner set', admin_adjust: 'Admin adjustment',
+  };
 
-  const rankedUsers = Object.entries(userStars)
-    .map(([uid, stars]) => ({ userId:Number(uid), stars, user:(data.users||[]).find(u=>u.id===Number(uid)) }))
-    .filter(r => r.user)
-    .sort((a,b) => b.stars - a.stars);
+  const loadLeaderboard = async () => {
+    try {
+      const res = await api.get(`/ranking/leaderboard?period=${period}&limit=50`);
+      setLeaderboard(res.leaderboard || []);
+      setMyRank(res.myRank || null);
+    } catch(e) { console.error('Load leaderboard error:', e); }
+  };
 
-  const allUsers = (data.users||[]).filter(u=>u.status==='approved');
-  const fullRanking = allUsers.map(u => {
-    const stars = userStars[u.id] || 0;
-    const badges = (data.badges||[]).filter(b=>b.userId===u.id).length;
-    const spacesAttended = (data.spaceParticipants||[]).filter(p=>p.userId===u.id).length;
-    return { user:u, stars, badges, spacesAttended };
-  }).sort((a,b) => b.stars - a.stars);
+  const loadMyDash = async () => {
+    try {
+      const res = await api.get('/ranking/me');
+      setMyDash(res);
+    } catch(e) { console.error('Load my rank error:', e); }
+  };
+
+  const loadAdmin = async () => {
+    try {
+      const [members, adj] = await Promise.all([
+        api.get('/ranking/admin/members'),
+        api.get('/ranking/admin/adjustments'),
+      ]);
+      setAdminMembers(Array.isArray(members) ? members : []);
+      setAdjustments(Array.isArray(adj) ? adj : []);
+    } catch(e) { console.error('Load admin data error:', e); }
+  };
+
+  useEffect(() => { loadLeaderboard(); }, [period]);
+  useEffect(() => {
+    if (tab === 'myRank') loadMyDash();
+    if (tab === 'admin' && isAdmin) loadAdmin();
+  }, [tab]);
+
+  // Auto-refresh every 60s
+  useEffect(() => {
+    const iv = setInterval(loadLeaderboard, 60000);
+    return () => clearInterval(iv);
+  }, [period]);
+
+  const handleAdjust = async () => {
+    if (!adjustForm?.userId || !adjustForm?.points || !adjustForm?.reason) return;
+    try {
+      setLoading(true);
+      const res = await api.post('/ranking/admin/adjust', adjustForm);
+      setMsg(res.message);
+      setTimeout(() => setMsg(''), 3000);
+      setAdjustForm(null);
+      loadAdmin();
+      loadLeaderboard();
+    } catch(e) { setMsg(e?.error || 'Error'); setTimeout(() => setMsg(''), 3000); }
+    finally { setLoading(false); }
+  };
+
+  const handleExport = async () => {
+    try {
+      const report = await api.get('/ranking/admin/export');
+      const headers = ['Rank','Name','Email','Role','Points','Tier','Login Streak','Best Streak','Last Login'];
+      const rows = report.map(r => [r.rank, r.name, r.email, r.role, r.totalPoints, r.tier, r.loginStreak, r.bestLoginStreak, r.lastLoginDate||'']);
+      const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'ranking_report.csv'; a.click(); URL.revokeObjectURL(url);
+    } catch(e) { console.error('Export error:', e); }
+  };
 
   const periods = [
-    { id:'thisWeek', label:t.social.thisWeek },
-    { id:'thisMonth', label:t.social.thisMonth },
-    { id:'allTime', label:t.social.allTime },
+    { id:'week', label:t.social.thisWeek },
+    { id:'month', label:t.social.thisMonth },
+    { id:'all', label:t.social.allTime },
   ];
 
   return (
     <div className="space-y-4 fade-in">
-      <div className="card p-4 flex items-center justify-between">
-        <div className="flex gap-1">
-          {periods.map(p=>(
-            <button key={p.id} onClick={()=>setPeriod(p.id)} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${period===p.id?'bg-dark-700 text-white':'text-gray-500 hover:text-gray-300'}`}>{p.label}</button>
-          ))}
+      {msg && <div className="fixed top-4 right-4 z-50 px-4 py-2 rounded-lg text-sm font-medium shadow-lg bg-green-900/90 text-green-300">{msg}</div>}
+
+      {/* Tab Bar */}
+      <div className="card p-3 flex items-center justify-between flex-wrap gap-2">
+        <div className="flex gap-1 bg-dark-900 rounded-lg p-1">
+          <button onClick={()=>setTab('leaderboard')} className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab==='leaderboard'?'bg-dark-700 text-gold-400':'text-gray-500'}`}>Leaderboard</button>
+          <button onClick={()=>setTab('myRank')} className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab==='myRank'?'bg-dark-700 text-gold-400':'text-gray-500'}`}>My Rank</button>
+          {isAdmin && <button onClick={()=>setTab('admin')} className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab==='admin'?'bg-dark-700 text-gold-400':'text-gray-500'}`}>Admin</button>}
         </div>
+        {tab === 'leaderboard' && (
+          <div className="flex gap-1">
+            {periods.map(p=>(<button key={p.id} onClick={()=>setPeriod(p.id)} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${period===p.id?'bg-gold-500/20 text-gold-400':'text-gray-500 hover:text-gray-300'}`}>{p.label}</button>))}
+          </div>
+        )}
       </div>
 
-      {/* Top 3 Podium */}
-      {fullRanking.length > 0 && (
-        <div className="grid grid-cols-3 gap-3">
-          {fullRanking.slice(0,3).map((r,i) => (
-            <div key={r.user.id} className={`card p-4 text-center ${i===0?'border border-gold-500/30':''}`}>
-              <div className={`text-2xl mb-1 ${i===0?'text-gold-400':i===1?'text-gray-400':'text-amber-700'}`}>{i===0?'🥇':i===1?'🥈':'🥉'}</div>
-              <div className="w-12 h-12 mx-auto rounded-full bg-gradient-to-br from-gold-500 to-gold-700 flex items-center justify-center text-dark-900 font-bold mb-2">{r.user.firstName?.[0]}{r.user.lastName?.[0]}</div>
-              <div className="text-sm font-semibold text-white truncate">{r.user.firstName} {r.user.lastName}</div>
-              <div className="flex items-center justify-center gap-1 mt-1"><Icon name="star" size={14} className="text-gold-400"/><span className="text-gold-400 font-bold">{r.stars}</span></div>
+      {/* ====== LEADERBOARD TAB ====== */}
+      {tab === 'leaderboard' && (<>
+        {/* Tier Legend */}
+        <div className="card p-3 flex flex-wrap gap-2">
+          {TIERS.map(t => <span key={t.name} className="text-[10px] px-2 py-1 rounded-full bg-dark-700 text-gray-400">{t.icon} {t.label} ({t.min}{t.max===Infinity?'+':'-'+t.max})</span>)}
+        </div>
+
+        {/* Top 3 Podium */}
+        {leaderboard.length > 0 && (
+          <div className="grid grid-cols-3 gap-3">
+            {leaderboard.slice(0,3).map((r,i) => {
+              const tier = getTier(r.totalPoints);
+              return (
+                <div key={r.userId} className={`card p-4 text-center ${i===0?'border border-gold-500/30':''}`}>
+                  <div className={`text-2xl mb-1`}>{i===0?'🥇':i===1?'🥈':'🥉'}</div>
+                  {r.avatar ? <img src={r.avatar} className="w-12 h-12 mx-auto rounded-full object-cover mb-2"/> :
+                    <div className="w-12 h-12 mx-auto rounded-full bg-gradient-to-br from-gold-500 to-gold-700 flex items-center justify-center text-dark-900 font-bold mb-2">{r.firstName?.[0]}{r.lastName?.[0]}</div>}
+                  <div className="text-sm font-semibold text-white truncate">{r.firstName} {r.lastName}</div>
+                  <div className="text-lg">{tier.icon}</div>
+                  <div className="text-[10px] text-gray-500">{tier.label}</div>
+                  <div className="text-gold-400 font-bold text-lg mt-1">{r.totalPoints} pts</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Full Ranking Table */}
+        <div className="card overflow-hidden">
+          <table className="w-full text-sm">
+            <thead><tr className="bg-dark-900 text-gray-500 text-xs">
+              <th className="px-3 py-3 text-left">#</th>
+              <th className="px-3 py-3 text-left">{t.common.name}</th>
+              <th className="px-3 py-3 text-center">Tier</th>
+              <th className="px-3 py-3 text-center">Points</th>
+              <th className="px-3 py-3 text-center hidden sm:table-cell">Streak</th>
+            </tr></thead>
+            <tbody>
+              {leaderboard.map((r,i) => {
+                const tier = getTier(r.totalPoints);
+                const isMe = r.userId === currentUser?.id;
+                return (
+                  <tr key={r.userId} className={`border-t border-dark-700 ${isMe?'bg-gold-500/5':''}`}>
+                    <td className="px-3 py-2.5 font-bold text-gray-400">{i < 3 ? ['🥇','🥈','🥉'][i] : i+1}</td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center gap-2">
+                        {r.avatar ? <img src={r.avatar} className="w-7 h-7 rounded-full object-cover"/> :
+                          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-gold-500 to-gold-700 flex items-center justify-center text-dark-900 text-[10px] font-bold">{r.firstName?.[0]}{r.lastName?.[0]}</div>}
+                        <div><div className="text-white font-medium text-xs">{r.firstName} {r.lastName}{isMe ? ' (You)' : ''}</div></div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5 text-center"><span className="text-sm">{tier.icon}</span><div className="text-[9px] text-gray-500">{tier.label}</div></td>
+                    <td className="px-3 py-2.5 text-center text-gold-400 font-bold">{r.totalPoints}</td>
+                    <td className="px-3 py-2.5 text-center text-gray-400 hidden sm:table-cell">{r.loginStreak || 0}d</td>
+                  </tr>
+                );
+              })}
+              {leaderboard.length===0 && <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-600">No ranking data yet</td></tr>}
+            </tbody>
+          </table>
+        </div>
+
+        {/* My rank if not in top list */}
+        {myRank && !leaderboard.find(l => l.userId === currentUser?.id) && (
+          <div className="card p-3 flex items-center gap-3 border border-gold-500/20">
+            <span className="text-sm font-bold text-gray-400">#{myRank.rank}</span>
+            <div className="text-sm">{getTier(myRank.totalPoints).icon}</div>
+            <div className="flex-1"><span className="text-white text-sm font-medium">{myRank.firstName} {myRank.lastName} (You)</span></div>
+            <span className="text-gold-400 font-bold">{myRank.totalPoints} pts</span>
+          </div>
+        )}
+      </>)}
+
+      {/* ====== MY RANK TAB ====== */}
+      {tab === 'myRank' && myDash && (() => {
+        const d = myDash;
+        const tier = d.currentTier;
+        const next = d.nextTier;
+        return (<>
+          {/* Tier Card */}
+          <div className="card p-5 text-center">
+            <div className="text-5xl mb-2">{tier.icon}</div>
+            <div className="text-xl font-bold text-white">{tier.label}</div>
+            <div className="text-3xl font-bold text-gold-400 mt-1">{d.totalPoints} pts</div>
+            <div className="text-sm text-gray-400 mt-1">Rank #{d.rank} of {d.totalMembers}</div>
+            {next && (
+              <div className="mt-4">
+                <div className="flex justify-between text-[10px] text-gray-500 mb-1">
+                  <span>{tier.icon} {tier.label}</span>
+                  <span>{next.icon} {next.label} ({d.pointsToNextTier} pts to go)</span>
+                </div>
+                <div className="h-2.5 bg-dark-700 rounded-full overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-gold-500 to-gold-400 rounded-full transition-all" style={{width:`${d.progressPercent}%`}}/>
+                </div>
+              </div>
+            )}
+            {!next && <div className="text-sm text-gold-400 mt-2">Maximum tier reached!</div>}
+          </div>
+
+          {/* Stats Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="card p-3 text-center"><div className="text-lg font-bold text-gold-400">{d.loginStreak}</div><div className="text-[10px] text-gray-500">Login Streak</div></div>
+            <div className="card p-3 text-center"><div className="text-lg font-bold text-blue-400">{d.bestLoginStreak}</div><div className="text-[10px] text-gray-500">Best Streak</div></div>
+            <div className="card p-3 text-center"><div className="text-lg font-bold text-green-400">{d.stats.eventsAttended}</div><div className="text-[10px] text-gray-500">Events Attended</div></div>
+            <div className="card p-3 text-center"><div className="text-lg font-bold text-purple-400">{d.stats.posts}</div><div className="text-[10px] text-gray-500">Posts</div></div>
+            <div className="card p-3 text-center"><div className="text-lg font-bold text-pink-400">{d.stats.followers}</div><div className="text-[10px] text-gray-500">Followers</div></div>
+            <div className="card p-3 text-center"><div className="text-lg font-bold text-cyan-400">{d.stats.following}</div><div className="text-[10px] text-gray-500">Following</div></div>
+            <div className="card p-3 text-center"><div className="text-lg font-bold text-yellow-400">{d.stats.groups}</div><div className="text-[10px] text-gray-500">Groups</div></div>
+            <div className="card p-3 text-center"><div className="text-lg font-bold text-gray-400">{d.averageScore}</div><div className="text-[10px] text-gray-500">Avg Score</div></div>
+          </div>
+
+          {/* Attendance Breakdown */}
+          <div className="card p-4">
+            <h3 className="text-sm font-bold text-white mb-3">Attendance Breakdown</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="bg-green-900/20 p-2 rounded-lg text-center"><div className="text-green-400 font-bold">{d.attendance.onTime}</div><div className="text-[9px] text-gray-500">On Time</div></div>
+              <div className="bg-yellow-900/20 p-2 rounded-lg text-center"><div className="text-yellow-400 font-bold">{d.attendance.late}</div><div className="text-[9px] text-gray-500">Late</div></div>
+              <div className="bg-orange-900/20 p-2 rounded-lg text-center"><div className="text-orange-400 font-bold">{d.attendance.veryLate}</div><div className="text-[9px] text-gray-500">Very Late</div></div>
+              <div className="bg-red-900/20 p-2 rounded-lg text-center"><div className="text-red-400 font-bold">{d.attendance.missed}</div><div className="text-[9px] text-gray-500">Missed</div></div>
             </div>
-          ))}
-        </div>
-      )}
+            <div className="grid grid-cols-3 gap-2 mt-2">
+              <div className="bg-blue-900/20 p-2 rounded-lg text-center"><div className="text-blue-400 font-bold">{d.attendance.walkin}</div><div className="text-[9px] text-gray-500">Walk-ins</div></div>
+              <div className="bg-purple-900/20 p-2 rounded-lg text-center"><div className="text-purple-400 font-bold">{d.attendance.checkouts}</div><div className="text-[9px] text-gray-500">Check-outs</div></div>
+              <div className="bg-gold-500/20 p-2 rounded-lg text-center"><div className="text-gold-400 font-bold">{d.attendance.fullAttendance}</div><div className="text-[9px] text-gray-500">Full Attend</div></div>
+            </div>
+          </div>
 
-      {/* Full Ranking Table */}
-      <div className="card overflow-hidden">
-        <table className="w-full text-sm">
-          <thead><tr className="bg-dark-900 text-gray-500 text-xs">
-            <th className="px-4 py-3 text-left">#</th>
-            <th className="px-4 py-3 text-left">{t.common.name}</th>
-            <th className="px-4 py-3 text-center"><Icon name="star" size={13} className="inline text-gold-400"/></th>
-            <th className="px-4 py-3 text-center">{t.social.badges}</th>
-            <th className="px-4 py-3 text-center">{t.social.spaces}</th>
-          </tr></thead>
-          <tbody>
-            {fullRanking.map((r,i) => (
-              <tr key={r.user.id} className="table-row border-t border-dark-700">
-                <td className="px-4 py-3 font-bold text-gray-400">{i+1}</td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-gold-500 to-gold-700 flex items-center justify-center text-dark-900 text-[10px] font-bold">{r.user.firstName?.[0]}{r.user.lastName?.[0]}</div>
-                    <div>
-                      <div className="text-white font-medium">{r.user.firstName} {r.user.lastName}</div>
-                      <div className="text-[10px] text-gray-600">{getRoleLabel(r.user.role, t)}</div>
-                    </div>
+          {/* Activity History */}
+          <div className="card p-4">
+            <h3 className="text-sm font-bold text-white mb-3">Activity History</h3>
+            <div className="space-y-1 max-h-80 overflow-y-auto">
+              {(d.history || []).map(h => (
+                <div key={h.id} className="flex items-center justify-between py-1.5 border-b border-dark-700 last:border-0">
+                  <div>
+                    <div className="text-xs text-white">{ACTION_LABELS[h.actionType] || h.actionType}</div>
+                    <div className="text-[9px] text-gray-600">{new Date(h.createdAt).toLocaleString()}</div>
                   </div>
-                </td>
-                <td className="px-4 py-3 text-center text-gold-400 font-bold">{r.stars}</td>
-                <td className="px-4 py-3 text-center text-gray-400">{r.badges}</td>
-                <td className="px-4 py-3 text-center text-gray-400">{r.spacesAttended}</td>
-              </tr>
-            ))}
-            {fullRanking.length===0 && <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-600">{t.common.noData}</td></tr>}
-          </tbody>
-        </table>
-      </div>
+                  <span className={`text-xs font-bold ${h.points >= 0 ? 'text-green-400' : 'text-red-400'}`}>{h.points >= 0 ? '+' : ''}{h.points}</span>
+                </div>
+              ))}
+              {(!d.history || d.history.length === 0) && <p className="text-xs text-gray-600 text-center py-4">No activity yet</p>}
+            </div>
+          </div>
+        </>);
+      })()}
+      {tab === 'myRank' && !myDash && <div className="card p-8 text-center text-gray-500">Loading...</div>}
+
+      {/* ====== ADMIN TAB ====== */}
+      {tab === 'admin' && isAdmin && (<>
+        <div className="flex gap-2 mb-2">
+          <Btn variant="ghost" onClick={handleExport}><Icon name="download" size={14}/> Export CSV</Btn>
+          <Btn variant="ghost" onClick={async()=>{try{await api.post('/ranking/process-missed');setMsg('Processed missed events');setTimeout(()=>setMsg(''),3000);loadAdmin();}catch(e){}}}><Icon name="attendance" size={14}/> Process Missed</Btn>
+        </div>
+
+        {/* Adjust Modal */}
+        {adjustForm && (
+          <div className="card p-4 mb-3 border border-gold-500/30">
+            <h4 className="text-sm font-bold text-white mb-2">{Number(adjustForm.points||0) >= 0 ? 'Award' : 'Deduct'} Points</h4>
+            <div className="text-xs text-gray-400 mb-2">User: {adminMembers.find(m=>m.userId===adjustForm.userId)?.firstName} {adminMembers.find(m=>m.userId===adjustForm.userId)?.lastName}</div>
+            <div className="flex gap-2 mb-2">
+              <input type="number" value={adjustForm.points||''} onChange={e=>setAdjustForm({...adjustForm,points:e.target.value})} placeholder="Points (+/-)" className="flex-1 bg-dark-700 text-white px-3 py-2 rounded-lg text-sm border border-dark-600 focus:border-gold-500 outline-none"/>
+              <input value={adjustForm.reason||''} onChange={e=>setAdjustForm({...adjustForm,reason:e.target.value})} placeholder="Reason (required)" className="flex-1 bg-dark-700 text-white px-3 py-2 rounded-lg text-sm border border-dark-600 focus:border-gold-500 outline-none"/>
+            </div>
+            <div className="flex gap-2">
+              <Btn onClick={handleAdjust} disabled={loading}>Submit</Btn>
+              <Btn variant="ghost" onClick={()=>setAdjustForm(null)}>Cancel</Btn>
+            </div>
+          </div>
+        )}
+
+        {/* Admin Members Table */}
+        <div className="card overflow-hidden">
+          <table className="w-full text-sm">
+            <thead><tr className="bg-dark-900 text-gray-500 text-xs">
+              <th className="px-3 py-2 text-left">#</th>
+              <th className="px-3 py-2 text-left">Name</th>
+              <th className="px-3 py-2 text-center">Tier</th>
+              <th className="px-3 py-2 text-center">Points</th>
+              <th className="px-3 py-2 text-center">Streak</th>
+              <th className="px-3 py-2 text-center">Missed</th>
+              <th className="px-3 py-2 text-center">Actions</th>
+            </tr></thead>
+            <tbody>
+              {adminMembers.map((m,i) => {
+                const tier = getTier(m.totalPoints);
+                return (
+                  <tr key={m.userId} className={`border-t border-dark-700 ${m.inactive ? 'opacity-50' : ''} ${m.flagMissed ? 'bg-red-900/10' : ''}`}>
+                    <td className="px-3 py-2 text-gray-400 text-xs">{i+1}</td>
+                    <td className="px-3 py-2">
+                      <div className="text-white text-xs font-medium">{m.firstName} {m.lastName}</div>
+                      <div className="text-[9px] text-gray-600">{m.role}{m.inactive ? ' · Inactive' : ''}{m.flagMissed ? ' · Frequent no-show' : ''}</div>
+                    </td>
+                    <td className="px-3 py-2 text-center text-sm">{tier.icon}</td>
+                    <td className="px-3 py-2 text-center text-gold-400 font-bold text-xs">{m.totalPoints}</td>
+                    <td className="px-3 py-2 text-center text-gray-400 text-xs">{m.loginStreak}d</td>
+                    <td className="px-3 py-2 text-center text-xs"><span className={m.missedEvents > 0 ? 'text-red-400' : 'text-gray-600'}>{m.missedEvents}</span></td>
+                    <td className="px-3 py-2 text-center">
+                      <button onClick={()=>setAdjustForm({userId:m.userId,points:'',reason:''})} className="text-[10px] text-gold-400 hover:underline">Adjust</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Recent Adjustments */}
+        {adjustments.length > 0 && (
+          <div className="card p-4">
+            <h3 className="text-sm font-bold text-white mb-3">Recent Admin Adjustments</h3>
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {adjustments.slice(0,20).map(a => (
+                <div key={a.id} className="flex items-center justify-between py-1.5 border-b border-dark-700 last:border-0">
+                  <div>
+                    <div className="text-xs text-white">{a.firstName} {a.lastName}</div>
+                    <div className="text-[9px] text-gray-600">{a.metadata?.note || 'No reason'} — by {a.metadata?.adminName || 'Admin'}</div>
+                    <div className="text-[9px] text-gray-600">{new Date(a.createdAt).toLocaleString()}</div>
+                  </div>
+                  <span className={`text-xs font-bold ${a.points >= 0 ? 'text-green-400' : 'text-red-400'}`}>{a.points >= 0 ? '+' : ''}{a.points}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </>)}
     </div>
   );
 };
@@ -4943,57 +5195,37 @@ const PastorWordPanel = ({ data, currentUser, setPage }) => {
 
 // Active Rankings Panel
 const RankingsPanel = ({ data, currentUser, setPage }) => {
-  const [period, setPeriod] = useState('month');
-  const users = data.users || [];
-  const stars = data.stars || [];
+  const rd = data.rankingData || { leaderboard: [], myRank: null };
+  const ranking = (rd.leaderboard || []).slice(0, 5);
+  const maxPoints = ranking[0]?.totalPoints || 1;
 
-  const now = Date.now();
-  const filtered = period === 'all' ? stars :
-    stars.filter(s => {
-      const age = now - new Date(s.createdAt).getTime();
-      return period === 'week' ? age < 7*24*3600000 : age < 30*24*3600000;
-    });
-
-  const ranking = users.map(u => ({
-    ...u,
-    totalStars: filtered.filter(s => s.toUserId === u.id).reduce((sum, s) => sum + (s.count || 1), 0)
-  })).sort((a, b) => b.totalStars - a.totalStars).slice(0, 5);
-
-  const maxStars = ranking[0]?.totalStars || 1;
-  const myRank = users.map(u => ({
-    id: u.id,
-    totalStars: filtered.filter(s => s.toUserId === u.id).reduce((sum, s) => sum + (s.count || 1), 0)
-  })).sort((a, b) => b.totalStars - a.totalStars).findIndex(u => u.id === currentUser?.id) + 1;
+  const TIER_ICONS = { seed:'🌱', sprout:'🌿', builder:'🔨', faithful:'⭐', pillar:'🏛️', champion:'🏆', legend:'👑' };
 
   return (
-    <HubPanel title="Most Active Members" emoji="⭐" badge={period === 'week' ? 'This Week' : period === 'month' ? 'This Month' : 'All Time'} badgeColor="bg-gold-500/20 text-gold-400" onViewAll={() => setPage('ranking')}>
-      <div className="flex gap-1 mb-3">
-        {['week','month','all'].map(p => (
-          <button key={p} onClick={() => setPeriod(p)} className={`text-[10px] px-2 py-1 rounded-full transition-colors ${period === p ? 'bg-gold-500/20 text-gold-400' : 'text-gray-500 hover:text-gray-300'}`}>
-            {p === 'week' ? 'Week' : p === 'month' ? 'Month' : 'All'}
-          </button>
-        ))}
-      </div>
+    <HubPanel title="Top Ranked Members" emoji="🏆" badge="All Time" badgeColor="bg-gold-500/20 text-gold-400" onViewAll={() => setPage('ranking')}>
       <div className="space-y-2">
         {ranking.map((u, i) => (
-          <div key={u.id} className={`flex items-center gap-2 p-1.5 rounded-lg ${u.id === currentUser?.id ? 'bg-gold-500/10 border border-gold-500/20' : ''}`}>
+          <div key={u.userId} className={`flex items-center gap-2 p-1.5 rounded-lg ${u.userId === currentUser?.id ? 'bg-gold-500/10 border border-gold-500/20' : ''}`}>
             <span className="text-sm w-5 text-center">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : <span className="text-gray-600 text-xs">{i+1}</span>}</span>
-            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-gold-500 to-gold-700 flex items-center justify-center text-dark-900 text-[10px] font-bold flex-shrink-0">
-              {u.firstName?.[0]}{u.lastName?.[0]}
-            </div>
+            {u.avatar ? <img src={u.avatar} className="w-7 h-7 rounded-full object-cover flex-shrink-0"/> :
+              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-gold-500 to-gold-700 flex items-center justify-center text-dark-900 text-[10px] font-bold flex-shrink-0">
+                {u.firstName?.[0]}{u.lastName?.[0]}
+              </div>}
             <div className="flex-1 min-w-0">
               <div className="text-white text-xs font-medium truncate">{u.firstName} {u.lastName}</div>
               <div className="h-1 bg-dark-700 rounded-full mt-0.5">
-                <div className="h-full bg-gold-500 rounded-full transition-all" style={{width: `${Math.max(5, (u.totalStars / maxStars) * 100)}%`}}/>
+                <div className="h-full bg-gold-500 rounded-full transition-all" style={{width: `${Math.max(5, (u.totalPoints / maxPoints) * 100)}%`}}/>
               </div>
             </div>
-            <span className="text-gold-400 text-xs font-semibold">★ {u.totalStars}</span>
+            <span className="text-xs mr-1">{TIER_ICONS[u.currentTier] || '🌱'}</span>
+            <span className="text-gold-400 text-xs font-semibold">{u.totalPoints} pts</span>
           </div>
         ))}
+        {ranking.length === 0 && <p className="text-xs text-gray-600 text-center py-2">No rankings yet</p>}
       </div>
-      {myRank > 5 && (
+      {rd.myRank && !ranking.find(r => r.userId === currentUser?.id) && (
         <div className="mt-2 pt-2 border-t border-dark-700 text-xs text-gray-400">
-          You: #{myRank} · ★ {filtered.filter(s => s.toUserId === currentUser?.id).reduce((sum, s) => sum + (s.count || 1), 0)} this {period === 'all' ? 'total' : period}
+          You: #{rd.myRank.rank} · {TIER_ICONS[rd.myRank.currentTier] || '🌱'} {rd.myRank.totalPoints} pts
         </div>
       )}
     </HubPanel>
@@ -5109,7 +5341,7 @@ const AnnouncementsPanel = ({ data, currentUser, setPage }) => {
             const author = (data.users || []).find(u => u.id === a.authorId);
             return (
               <div key={a.id} className={`p-2.5 rounded-lg bg-dark-700/50 border-l-[3px] ${priorityColors[a.priority] || 'border-blue-500'}`}>
-                <div className="text-white text-sm font-medium">{a.isPinned && '📌 '}{a.title}</div>
+                <div className="text-white text-sm font-medium">{a.isPinned ? '📌 ' : ''}{a.title}</div>
                 <p className="text-gray-400 text-xs line-clamp-2 mt-0.5">{a.content}</p>
                 <div className="text-[10px] text-gray-600 mt-1">{author?.firstName} {author?.lastName} · {timeAgo(a.publishedAt)}</div>
               </div>
@@ -5496,7 +5728,7 @@ const AnnouncementsPage = ({ data, updateData, t, currentUser }) => {
               <div className="p-5">
               <div className="flex items-start justify-between">
                 <div>
-                  <h3 className="text-white font-bold text-lg">{a.isPinned && '📌 '}{a.title}</h3>
+                  <h3 className="text-white font-bold text-lg">{a.isPinned ? '📌 ' : ''}{a.title}</h3>
                   <p className="text-gray-300 mt-2 whitespace-pre-wrap">{a.content}</p>
                   <div className="text-xs text-gray-600 mt-3">{author?.firstName} {author?.lastName} · {new Date(a.publishedAt).toLocaleDateString()}</div>
                 </div>
@@ -7324,16 +7556,18 @@ function App() {
         setData(prev => ({ ...prev, groups: Array.isArray(groupsRes) ? groupsRes : [] }));
       }
 
-      const [postsRes, spacesRes, rankingRes] = await Promise.all([
+      const [postsRes, spacesRes, rankingRes, rankLeaderboardRes] = await Promise.all([
         api.get('/feed?limit=50').catch(()=>[]),
         api.get('/spaces').catch(()=>[]),
         api.get('/stars/ranking').catch(()=>[]),
+        api.get('/ranking/leaderboard?period=all&limit=50').catch(()=>({ leaderboard: [], myRank: null, tiers: [], pointValues: {} })),
       ]);
       setData(prev => ({
         ...prev,
         posts: Array.isArray(postsRes) ? postsRes : [],
         spaces: Array.isArray(spacesRes) ? spacesRes : [],
         stars: Array.isArray(rankingRes) ? rankingRes : [],
+        rankingData: rankLeaderboardRes || { leaderboard: [], myRank: null, tiers: [], pointValues: {} },
       }));
 
       const [pastorRes, prayerRes, announcementsRes, fundraisingRes, settingsRes] = await Promise.all([

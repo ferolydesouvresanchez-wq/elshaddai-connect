@@ -1,6 +1,7 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { authenticate } = require('../middleware/auth');
+const { awardPoints, POINT_VALUES } = require('../helpers/points');
 
 module.exports = function(db) {
   const router = express.Router();
@@ -75,6 +76,12 @@ module.exports = function(db) {
       req.user.id
     );
 
+    // Award follow points: +2 for following, +3 for being followed (if active immediately)
+    if (status === 'active') {
+      awardPoints(db, req.user.id, 'follow', POINT_VALUES.follow, req.params.userId, 'user', null);
+      awardPoints(db, req.params.userId, 'followed', POINT_VALUES.followed, req.user.id, 'user', null);
+    }
+
     res.status(201).json({ status });
   });
 
@@ -86,6 +93,10 @@ module.exports = function(db) {
     if (!follow) return res.status(404).json({ error: 'Follow request not found' });
 
     db.prepare("UPDATE follows SET status = 'active' WHERE id = ?").run(req.params.followId);
+
+    // Award follow/followed points on acceptance
+    awardPoints(db, follow.followerId, 'follow', POINT_VALUES.follow, req.user.id, 'user', null);
+    awardPoints(db, req.user.id, 'followed', POINT_VALUES.followed, follow.followerId, 'user', null);
 
     // Notify the follower
     const user = db.prepare('SELECT firstName, lastName FROM users WHERE id = ?').get(req.user.id);

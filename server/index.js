@@ -44,6 +44,7 @@ app.use('/api/feed', require('./routes/feed')(db));
 app.use('/api/follows', require('./routes/follows')(db));
 app.use('/api/spaces', require('./routes/spaces')(db));
 app.use('/api/stars', require('./routes/stars')(db));
+app.use('/api/ranking', require('./routes/ranking')(db));
 app.use('/api/notifications', require('./routes/notifications')(db));
 app.use('/api/users', require('./routes/users')(db));
 app.use('/api/community', require('./routes/community')(db));
@@ -78,6 +79,24 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+// Missed event penalty cron — runs every hour
+const { processMissedEvents } = require('./helpers/points');
+setInterval(() => {
+  try {
+    const result = processMissedEvents(db);
+    if (result.processed > 0) {
+      console.log(`[CRON] Processed ${result.processed} missed event penalties from ${result.eventsChecked} events`);
+    }
+  } catch (e) {
+    console.error('[CRON] Missed event processing error:', e.message);
+  }
+}, 60 * 60 * 1000); // Every hour
+
+// Run once on startup too (after short delay)
+setTimeout(() => {
+  try { processMissedEvents(db); } catch(e) { console.error('[CRON] Startup missed event processing error:', e.message); }
+}, 5000);
 
 // SPA fallback - serve index.html for any non-API route
 app.get('*', (req, res) => {

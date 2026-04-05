@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const { generateToken, authenticate } = require('../middleware/auth');
+const { processLogin, awardPoints, POINT_VALUES, checkProfileComplete } = require('../helpers/points');
 
 module.exports = function(db) {
   const router = express.Router();
@@ -28,8 +29,12 @@ module.exports = function(db) {
     }
 
     const token = generateToken(user);
+
+    // Process login for daily points and streak tracking
+    const loginResult = processLogin(db, user.id);
+
     const { password: _, ...userData } = user;
-    res.json({ token, user: userData });
+    res.json({ token, user: userData, loginStreak: loginResult.streak || 0 });
   });
 
   // POST /api/auth/register
@@ -110,6 +115,12 @@ module.exports = function(db) {
     }
 
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+
+    // Check profile completion and award points if newly complete
+    if (checkProfileComplete(db, req.user.id)) {
+      awardPoints(db, req.user.id, 'profile_complete', POINT_VALUES.profile_complete, req.user.id, 'user', null);
+    }
+
     const { password: _, ...userData } = user;
     res.json(userData);
   });

@@ -461,6 +461,37 @@ function initDatabase() {
       updatedAt TEXT DEFAULT (datetime('now'))
     );
 
+    -- Point Ledger (activity-based ranking system)
+    CREATE TABLE IF NOT EXISTS point_ledger (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      actionType TEXT NOT NULL,
+      points INTEGER NOT NULL,
+      relatedEntityId TEXT,
+      relatedEntityType TEXT,
+      metadata TEXT,
+      createdAt TEXT DEFAULT (datetime('now'))
+    );
+
+    -- User Points (materialized summary)
+    CREATE TABLE IF NOT EXISTS user_points (
+      userId TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      totalPoints INTEGER DEFAULT 0,
+      currentTier TEXT DEFAULT 'seed',
+      loginStreak INTEGER DEFAULT 0,
+      bestLoginStreak INTEGER DEFAULT 0,
+      lastLoginDate TEXT,
+      updatedAt TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Login History (for streak calculation)
+    CREATE TABLE IF NOT EXISTS login_history (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      loginDate TEXT NOT NULL,
+      UNIQUE(userId, loginDate)
+    );
+
     -- Indexes for performance
     CREATE INDEX IF NOT EXISTS idx_attendance_member ON attendance(memberId);
     CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date);
@@ -489,6 +520,10 @@ function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_conv_participants ON conversation_participants(userId);
     CREATE INDEX IF NOT EXISTS idx_chat_messages_conv ON chat_messages(conversationId);
     CREATE INDEX IF NOT EXISTS idx_chat_messages_created ON chat_messages(createdAt);
+    CREATE INDEX IF NOT EXISTS idx_point_ledger_user ON point_ledger(userId);
+    CREATE INDEX IF NOT EXISTS idx_point_ledger_action ON point_ledger(userId, actionType, relatedEntityId);
+    CREATE INDEX IF NOT EXISTS idx_point_ledger_created ON point_ledger(createdAt);
+    CREATE INDEX IF NOT EXISTS idx_login_history_user ON login_history(userId, loginDate);
   `);
 
   // Migration: add status column if missing
@@ -534,6 +569,32 @@ function initDatabase() {
     );
     CREATE INDEX IF NOT EXISTS idx_event_checkins ON event_checkins(eventId);
   `);
+
+  // Migration: add arrivalStatus to event_checkins
+  const checkinCols = db.prepare("PRAGMA table_info(event_checkins)").all().map(c => c.name);
+  if (!checkinCols.includes('arrivalStatus')) {
+    db.exec("ALTER TABLE event_checkins ADD COLUMN arrivalStatus TEXT DEFAULT 'ontime'");
+    console.log('Migration: added arrivalStatus column to event_checkins');
+  }
+
+  // Migration: add gracePeriodMinutes to events
+  if (!eventCols.includes('gracePeriodMinutes')) {
+    db.exec("ALTER TABLE events ADD COLUMN gracePeriodMinutes INTEGER DEFAULT 15");
+    console.log('Migration: added gracePeriodMinutes column to events');
+  }
+
+  // Initialize user_points for all existing users who don't have a row yet
+  const usersWithoutPoints = db.prepare(`
+    SELECT id FROM users WHERE id NOT IN (SELECT userId FROM user_points) AND active = 1
+  `).all();
+  if (usersWithoutPoints.length > 0) {
+    const insertUp = db.prepare("INSERT OR IGNORE INTO user_points (userId) VALUES (?)");
+    const initPoints = db.transaction((users) => {
+      for (const u of users) insertUp.run(u.id);
+    });
+    initPoints(usersWithoutPoints);
+    console.log(`Migration: initialized user_points for ${usersWithoutPoints.length} existing users`);
+  }
 
   // Seed default admin user if no users exist
   const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();

@@ -1,6 +1,7 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { authenticate } = require('../middleware/auth');
+const { awardPoints, POINT_VALUES } = require('../helpers/points');
 
 module.exports = function(db) {
   const router = express.Router();
@@ -84,6 +85,14 @@ module.exports = function(db) {
 
     const post = db.prepare('SELECT * FROM posts WHERE id = ?').get(id);
     post._requestUserId = req.user.id;
+
+    // Award points: publish_post (+8) or share/repost (+5)
+    if (repostOfId) {
+      awardPoints(db, req.user.id, 'share', POINT_VALUES.share, id, 'post', null);
+    } else {
+      awardPoints(db, req.user.id, 'publish_post', POINT_VALUES.publish_post, id, 'post', null);
+    }
+
     res.status(201).json(enrichPost(post));
   });
 
@@ -129,6 +138,9 @@ module.exports = function(db) {
         );
       }
 
+      // Award like point (+1)
+      awardPoints(db, req.user.id, 'like', POINT_VALUES.like, `${req.params.id}_${type}`, 'post', { reactionType: type });
+
       res.json({ action: 'added' });
     }
   });
@@ -163,6 +175,9 @@ module.exports = function(db) {
         req.params.id
       );
     }
+
+    // Award comment points (+3)
+    awardPoints(db, req.user.id, 'comment', POINT_VALUES.comment, id, 'post', null);
 
     const comment = db.prepare(`
       SELECT c.*, u.firstName, u.lastName, u.role, u.avatar

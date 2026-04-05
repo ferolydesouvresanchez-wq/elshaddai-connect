@@ -2,6 +2,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { notifyAllUsers } = require('../helpers/notify');
+const { awardPoints, POINT_VALUES } = require('../helpers/points');
 
 module.exports = function(db) {
   const router = express.Router();
@@ -10,7 +11,7 @@ module.exports = function(db) {
   function enrichEvent(event, userId) {
     const rsvpCount = db.prepare('SELECT COUNT(*) as count FROM event_rsvps WHERE eventId = ?').get(event.id).count;
     const myRsvp = userId ? db.prepare('SELECT id, createdAt FROM event_rsvps WHERE eventId = ? AND userId = ?').get(event.id, userId) : null;
-    const myCheckin = userId ? db.prepare("SELECT id, checkedAt FROM event_checkins WHERE eventId = ? AND userId = ? AND type = 'checkin'").get(event.id, userId) : null;
+    const myCheckin = userId ? db.prepare("SELECT id, checkedAt, arrivalStatus FROM event_checkins WHERE eventId = ? AND userId = ? AND type = 'checkin'").get(event.id, userId) : null;
     const myCheckout = userId ? db.prepare("SELECT id, checkedAt FROM event_checkins WHERE eventId = ? AND userId = ? AND type = 'checkout'").get(event.id, userId) : null;
     const checkinCount = db.prepare("SELECT COUNT(*) as count FROM event_checkins WHERE eventId = ? AND type = 'checkin'").get(event.id).count;
     return {
@@ -18,7 +19,7 @@ module.exports = function(db) {
       rsvpCount,
       checkinCount,
       myRsvp: myRsvp ? { id: myRsvp.id, createdAt: myRsvp.createdAt } : null,
-      myCheckin: myCheckin ? { id: myCheckin.id, checkedAt: myCheckin.checkedAt } : null,
+      myCheckin: myCheckin ? { id: myCheckin.id, checkedAt: myCheckin.checkedAt, arrivalStatus: myCheckin.arrivalStatus } : null,
       myCheckout: myCheckout ? { id: myCheckout.id, checkedAt: myCheckout.checkedAt } : null,
     };
   }
@@ -51,14 +52,12 @@ module.exports = function(db) {
     const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
     if (!event) return res.status(404).json({ error: 'Event not found' });
 
-    // Get full RSVP list with user names
     const rsvps = db.prepare(`
       SELECT er.*, u.firstName, u.lastName, u.avatar
       FROM event_rsvps er JOIN users u ON er.userId = u.id
       WHERE er.eventId = ?
     `).all(req.params.id);
 
-    // Get check-ins
     const checkins = db.prepare(`
       SELECT ec.*, u.firstName, u.lastName
       FROM event_checkins ec JOIN users u ON ec.userId = u.id
@@ -70,22 +69,23 @@ module.exports = function(db) {
 
   // POST /api/events
   router.post('/', requireRole('superadmin', 'admin', 'ministry_leader'), (req, res) => {
-    const { title, description, date, time, endDate, endTime, location, type, recurring, photo, lat, lng } = req.body;
+    const { title, description, date, time, endDate, endTime, location, type, recurring, photo, lat, lng, gracePeriodMinutes } = req.body;
     if (!title || !date) {
       return res.status(400).json({ error: 'Title and date required' });
     }
 
     const id = uuidv4();
     db.prepare(`
-      INSERT INTO events (id, title, description, date, time, endDate, endTime, location, type, recurring, photo, lat, lng, createdBy)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO events (id, title, description, date, time, endDate, endTime, location, type, recurring, photo, lat, lng, gracePeriodMinutes, createdBy)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, title, description || null, date, time || null, endDate || null, endTime || null,
            location || null, type || 'general', recurring ? 1 : 0, photo || null,
-           lat != null ? lat : null, lng != null ? lng : null, req.user.id);
+           lat != null ? lat : null, lng != null ? lng : null,
+           gracePeriodMinutes != null ? gracePeriodMinutes : 15,
+           req.user.id);
 
     const event = db.prepare('SELECT * FROM events WHERE id = ?').get(id);
 
-    // Notify all users about the new event
     notifyAllUsers(db, {
       type: 'new_event',
       title: 'New Event: ' + title,
@@ -105,9 +105,9 @@ module.exports = function(db) {
       return res.status(403).json({ error: 'Can only edit your own events' });
     }
 
-    const { title, description, date, time, endDate, endTime, location, type, recurring, photo, lat, lng } = req.body;
+    const { title, description, date, time, endDate, endTime, location, type, recurring, photo, lat, lng, gracePeriodMinutes } = req.body;
     db.prepare(`
-      UPDATE events SET title=?, description=?, date=?, time=?, endDate=?, endTime=?, location=?, type=?, recurring=?, photo=?, lat=?, lng=?, updatedAt=datetime('now')
+      UPDATE events SET title=?, description=?, date=?, time=?, endDate=?, endTime=?, location=?, type=?, recurring=?, photo=?, lat=?, lng=?, gracePeriodMinutes=?, updatedAt=datetime('now')
       WHERE id = ?
     `).run(
       title || existing.title, description !== undefined ? description : existing.description,
@@ -119,6 +119,7 @@ module.exports = function(db) {
       photo !== undefined ? photo : existing.photo,
       lat !== undefined ? lat : existing.lat,
       lng !== undefined ? lng : existing.lng,
+      gracePeriodMinutes !== undefined ? gracePeriodMinutes : (existing.gracePeriodMinutes || 15),
       req.params.id
     );
 
@@ -137,7 +138,9 @@ module.exports = function(db) {
     res.json({ message: 'Event deleted' });
   });
 
-  // POST /api/events/:id/rsvp
+  // =============================================================
+  // POST /api/events/:id/rsvp — Awards +5 points
+  // =============================================================
   router.post('/:id/rsvp', (req, res) => {
     const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
     if (!event) return res.status(404).json({ error: 'Event not found' });
@@ -145,6 +148,8 @@ module.exports = function(db) {
       db.prepare('INSERT INTO event_rsvps (id, eventId, userId) VALUES (?, ?, ?)').run(
         uuidv4(), req.params.id, req.user.id
       );
+      // Award RSVP points
+      awardPoints(db, req.user.id, 'rsvp', POINT_VALUES.rsvp, req.params.id, 'event', null);
       res.status(201).json({ message: 'RSVP confirmed' });
     } catch (e) {
       if (e.message.includes('UNIQUE')) return res.json({ message: 'Already RSVPd' });
@@ -155,12 +160,11 @@ module.exports = function(db) {
   // DELETE /api/events/:id/rsvp
   router.delete('/:id/rsvp', (req, res) => {
     db.prepare('DELETE FROM event_rsvps WHERE eventId = ? AND userId = ?').run(req.params.id, req.user.id);
-    // Also remove check-ins if RSVP is cancelled
     db.prepare('DELETE FROM event_checkins WHERE eventId = ? AND userId = ?').run(req.params.id, req.user.id);
     res.json({ message: 'RSVP cancelled' });
   });
 
-  // GET /api/events/:id/rsvps - Get all RSVPs for an event
+  // GET /api/events/:id/rsvps
   router.get('/:id/rsvps', (req, res) => {
     const rsvps = db.prepare(`
       SELECT er.*, u.firstName, u.lastName, u.avatar
@@ -172,7 +176,7 @@ module.exports = function(db) {
 
   // Helper: calculate distance between two lat/lng points in meters (Haversine)
   function distanceMeters(lat1, lng1, lat2, lng2) {
-    const R = 6371000; // Earth radius in meters
+    const R = 6371000;
     const toRad = (deg) => deg * Math.PI / 180;
     const dLat = toRad(lat2 - lat1);
     const dLng = toRad(lng2 - lng1);
@@ -181,16 +185,37 @@ module.exports = function(db) {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   }
 
-  const CHECKIN_RADIUS_METERS = 150; // Must be within 150m of event location
+  const CHECKIN_RADIUS_METERS = 150;
 
-  // POST /api/events/:id/checkin - Check in to event (requires geolocation)
+  // =============================================================
+  // Determine arrival status: ontime, late, verylate
+  // =============================================================
+  function getArrivalStatus(event) {
+    if (!event.time) return 'ontime'; // No start time = always on time
+
+    const now = new Date();
+    const eventDateStr = event.date; // YYYY-MM-DD
+    const [hours, minutes] = event.time.split(':').map(Number);
+    const eventStart = new Date(`${eventDateStr}T${event.time}:00`);
+    const gracePeriod = event.gracePeriodMinutes || 15;
+    const graceEnd = new Date(eventStart.getTime() + gracePeriod * 60 * 1000);
+    const lateLimit = new Date(eventStart.getTime() + gracePeriod * 2 * 60 * 1000); // 2x grace = very late
+
+    if (now <= graceEnd) return 'ontime';       // Within start + grace period
+    if (now <= lateLimit) return 'late';          // Within 2x grace period
+    return 'verylate';                            // Beyond 2x grace
+  }
+
+  // =============================================================
+  // POST /api/events/:id/checkin — Awards points based on arrival status
+  // =============================================================
   router.post('/:id/checkin', (req, res) => {
     const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
     if (!event) return res.status(404).json({ error: 'Event not found' });
 
-    // Must have RSVP'd first
+    // Check if user has RSVP'd
     const rsvp = db.prepare('SELECT id FROM event_rsvps WHERE eventId = ? AND userId = ?').get(req.params.id, req.user.id);
-    if (!rsvp) return res.status(400).json({ error: 'Must RSVP before checking in' });
+    const isWalkin = !rsvp;
 
     // Verify geolocation if event has coordinates
     const { lat, lng } = req.body || {};
@@ -208,23 +233,46 @@ module.exports = function(db) {
       }
     }
 
+    // Determine arrival status
+    const arrivalStatus = getArrivalStatus(event);
+
     try {
-      db.prepare("INSERT INTO event_checkins (id, eventId, userId, type) VALUES (?, ?, ?, 'checkin')").run(
-        uuidv4(), req.params.id, req.user.id
+      db.prepare("INSERT INTO event_checkins (id, eventId, userId, type, arrivalStatus) VALUES (?, ?, ?, 'checkin', ?)").run(
+        uuidv4(), req.params.id, req.user.id, arrivalStatus
       );
-      res.status(201).json({ message: 'Checked in successfully!' });
+
+      // Award points based on status
+      if (isWalkin) {
+        // Walk-in: no RSVP, just showed up
+        awardPoints(db, req.user.id, 'walkin_checkin', POINT_VALUES.walkin_checkin, req.params.id, 'event', { arrivalStatus });
+      } else if (arrivalStatus === 'ontime') {
+        awardPoints(db, req.user.id, 'checkin_ontime', POINT_VALUES.checkin_ontime, req.params.id, 'event', { arrivalStatus: 'ontime' });
+      } else if (arrivalStatus === 'late') {
+        awardPoints(db, req.user.id, 'checkin_late', POINT_VALUES.checkin_late, req.params.id, 'event', { arrivalStatus: 'late' });
+      } else {
+        // Very late — 0 points, but record in ledger for tracking
+        awardPoints(db, req.user.id, 'checkin_verylate', POINT_VALUES.checkin_verylate, req.params.id, 'event', { arrivalStatus: 'verylate' });
+      }
+
+      const statusLabels = { ontime: 'on time', late: 'late (grace period)', verylate: 'very late (no points)' };
+      res.status(201).json({
+        message: `Checked in successfully! (${statusLabels[arrivalStatus]})`,
+        arrivalStatus,
+        pointsAwarded: isWalkin ? POINT_VALUES.walkin_checkin : (arrivalStatus === 'ontime' ? POINT_VALUES.checkin_ontime : arrivalStatus === 'late' ? POINT_VALUES.checkin_late : 0),
+      });
     } catch (e) {
       if (e.message.includes('UNIQUE')) return res.json({ message: 'Already checked in' });
       throw e;
     }
   });
 
-  // POST /api/events/:id/checkout - Check out from event (requires geolocation)
+  // =============================================================
+  // POST /api/events/:id/checkout — Awards +10 points + full attendance bonus
+  // =============================================================
   router.post('/:id/checkout', (req, res) => {
     const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
     if (!event) return res.status(404).json({ error: 'Event not found' });
 
-    // Must have checked in first
     const checkin = db.prepare("SELECT id FROM event_checkins WHERE eventId = ? AND userId = ? AND type = 'checkin'").get(req.params.id, req.user.id);
     if (!checkin) return res.status(400).json({ error: 'Must check in before checking out' });
 
@@ -248,7 +296,17 @@ module.exports = function(db) {
       db.prepare("INSERT INTO event_checkins (id, eventId, userId, type) VALUES (?, ?, ?, 'checkout')").run(
         uuidv4(), req.params.id, req.user.id
       );
-      res.status(201).json({ message: 'Checked out successfully!' });
+
+      // Award checkout points
+      awardPoints(db, req.user.id, 'checkout', POINT_VALUES.checkout, req.params.id, 'event', null);
+
+      // Award full attendance bonus (checked in AND checked out)
+      awardPoints(db, req.user.id, 'full_attendance', POINT_VALUES.full_attendance, req.params.id, 'event', null);
+
+      res.status(201).json({
+        message: 'Checked out successfully! +10 points + 15 bonus for full attendance!',
+        pointsAwarded: POINT_VALUES.checkout + POINT_VALUES.full_attendance,
+      });
     } catch (e) {
       if (e.message.includes('UNIQUE')) return res.json({ message: 'Already checked out' });
       throw e;
