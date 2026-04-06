@@ -2411,6 +2411,7 @@ const MemberDashboard = ({ data, updateData, t, currentUser }) => {
   const recentMembers = [...data.members].sort((a,b) => new Date(b.joinDate) - new Date(a.joinDate)).slice(0, 8);
   const [eventDetail, setEventDetail] = useState(null);
   const [rsvpMsg, setRsvpMsg] = useState('');
+  const myRsvps = data.events.filter(e => e.myRsvp).map(e => ({ eventId: e.id, attending: true }));
 
   const handleRsvp = async () => {
     if (!eventDetail) return;
@@ -2503,7 +2504,7 @@ const MemberDashboard = ({ data, updateData, t, currentUser }) => {
                 const rsvp = myRsvps.find(r => r.eventId === e.id);
                 return (
                   <div key={e.id} className="rounded-xl bg-dark-800 border border-dark-700 overflow-hidden cursor-pointer hover:border-gold-500/50 transition-colors"
-                    onClick={() => { setEventDetail(e); setRsvpForm({ attending: true, reason: '' }); setRsvpMsg(''); }}>
+                    onClick={() => { setEventDetail(e); setRsvpMsg(''); }}>
                     {e.photo ? <img src={e.photo} className="w-full h-36 object-cover"/>
                       : <div className="w-full h-36 bg-gradient-to-br from-amber-900/40 to-dark-700 flex items-center justify-center text-4xl">📅</div>}
                     <div className="p-3">
