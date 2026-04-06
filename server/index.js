@@ -8,10 +8,21 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Initialize database
-const db = initDatabase();
+let db;
+try {
+  db = initDatabase();
+} catch (e) {
+  console.error('FATAL: Database initialization failed:', e.message);
+  process.exit(1);
+}
 
-// Initialize Memory Bank — verify all books before serving requests
-const memoryBankReport = initMemoryBank(db);
+// Initialize Memory Bank — verify all books before serving requests (non-fatal)
+let memoryBankReport = {};
+try {
+  memoryBankReport = initMemoryBank(db);
+} catch (e) {
+  console.error('[MemoryBank] Initialization failed (non-fatal):', e.message);
+}
 
 // Middleware
 const isProduction = process.env.NODE_ENV === 'production';

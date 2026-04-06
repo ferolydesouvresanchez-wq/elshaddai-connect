@@ -24,7 +24,7 @@ const MEMORY_BOOKS = {
   MEMORY_FEED:           { tables: ['posts', 'reactions', 'comments'], label: 'Social Feed' },
   MEMORY_MESSAGES:       { tables: ['conversations', 'conversation_participants', 'chat_messages', 'chat_message_reads'], label: 'Messaging' },
   MEMORY_SPACES:         { tables: ['spaces', 'space_participants', 'space_chats'], label: 'Live Spaces' },
-  MEMORY_STARS:          { tables: ['stars', 'badges'], label: 'Stars & Rankings' },
+  MEMORY_STARS:          { tables: ['stars', 'badges'], label: 'Stars & Rankings (Legacy)' },
   MEMORY_FOLLOWS:        { tables: ['follows'], label: 'Follow Relationships' },
   MEMORY_PASTOR:         { tables: ['pastor_messages'], label: 'Pastor Messages' },
   MEMORY_PRAYER:         { tables: ['prayer_requests', 'prayer_interactions'], label: 'Prayer Wall' },
@@ -35,6 +35,7 @@ const MEMORY_BOOKS = {
   MEMORY_THEME_PREFERENCES: { tables: ['app_settings'], label: 'Theme Preferences (per-user)' },
   MEMORY_COURSES:        { tables: ['courses', 'lessons', 'lesson_progress'], label: 'Courses & Lessons' },
   MEMORY_AUTH:           { tables: ['users'], label: 'Authentication' },
+  MEMORY_RANKING:        { tables: ['point_ledger', 'user_points', 'login_history'], label: 'Ranking & Points System' },
 };
 
 // Data directory for Memory Bank status files
@@ -42,8 +43,38 @@ const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || process.env.DATA_DIR |
 const BANK_STATUS_DIR = path.join(DATA_DIR, '.memorybank');
 
 /**
+ * Safely write a file — never throws
+ */
+function safeWriteFile(filePath, content) {
+  try {
+    fs.writeFileSync(filePath, content);
+    return true;
+  } catch (e) {
+    console.warn(`[MemoryBank] Could not write ${filePath}: ${e.message}`);
+    return false;
+  }
+}
+
+/**
+ * Safely create a directory — never throws
+ */
+function safeEnsureDir(dirPath) {
+  try {
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true });
+      console.log(`[MemoryBank] Created directory: ${dirPath}`);
+    }
+    return true;
+  } catch (e) {
+    console.warn(`[MemoryBank] Could not create directory ${dirPath}: ${e.message}`);
+    return false;
+  }
+}
+
+/**
  * Initialize the Memory Bank system
  * Called once on server startup before serving any requests
+ * NEVER throws — all errors are caught and logged
  */
 function initMemoryBank(db) {
   console.log('\n========================================');
@@ -52,10 +83,10 @@ function initMemoryBank(db) {
   console.log('Data directory:', DATA_DIR);
   console.log('Bank status dir:', BANK_STATUS_DIR);
 
-  // Ensure status directory exists
-  if (!fs.existsSync(BANK_STATUS_DIR)) {
-    fs.mkdirSync(BANK_STATUS_DIR, { recursive: true });
-    console.log('Created Memory Bank status directory');
+  // Ensure status directory exists (non-fatal if it fails)
+  const dirOk = safeEnsureDir(BANK_STATUS_DIR);
+  if (!dirOk) {
+    console.warn('[MemoryBank] Status directory unavailable — running without status files');
   }
 
   const report = {};
@@ -64,14 +95,19 @@ function initMemoryBank(db) {
   let booksRecovered = 0;
 
   for (const [bookName, bookDef] of Object.entries(MEMORY_BOOKS)) {
-    const bookStatus = verifyBook(db, bookName, bookDef);
-    report[bookName] = bookStatus;
-    totalRecords += bookStatus.recordCount;
+    try {
+      const bookStatus = verifyBook(db, bookName, bookDef, dirOk);
+      report[bookName] = bookStatus;
+      totalRecords += bookStatus.recordCount;
 
-    if (bookStatus.status === 'OK') {
-      booksOk++;
-    } else if (bookStatus.status === 'RECOVERED') {
-      booksRecovered++;
+      if (bookStatus.status === 'OK') {
+        booksOk++;
+      } else if (bookStatus.status === 'RECOVERED') {
+        booksRecovered++;
+      }
+    } catch (e) {
+      console.error(`[MemoryBank] Failed to verify book ${bookName}: ${e.message}`);
+      report[bookName] = { bookName, label: bookDef.label, status: 'ERROR', recordCount: 0, error: e.message };
     }
   }
 
@@ -84,20 +120,22 @@ function initMemoryBank(db) {
   console.log(`Status: ${booksOk} OK, ${booksRecovered} recovered`);
   console.log('========================================\n');
 
-  // Write master status file
-  const masterStatus = {
-    lastStartup: new Date().toISOString(),
-    books: report,
-    totalRecords,
-    booksOk,
-    booksRecovered,
-    dataDir: DATA_DIR,
-    dbPath: db.name,
-  };
-  fs.writeFileSync(
-    path.join(BANK_STATUS_DIR, 'master_status.json'),
-    JSON.stringify(masterStatus, null, 2)
-  );
+  // Write master status file (non-fatal)
+  if (dirOk) {
+    const masterStatus = {
+      lastStartup: new Date().toISOString(),
+      books: report,
+      totalRecords,
+      booksOk,
+      booksRecovered,
+      dataDir: DATA_DIR,
+      dbPath: db.name,
+    };
+    safeWriteFile(
+      path.join(BANK_STATUS_DIR, 'master_status.json'),
+      JSON.stringify(masterStatus, null, 2)
+    );
+  }
 
   return report;
 }
@@ -106,7 +144,7 @@ function initMemoryBank(db) {
  * Verify a single Memory Bank book
  * Checks that all tables exist and have data integrity
  */
-function verifyBook(db, bookName, bookDef) {
+function verifyBook(db, bookName, bookDef, writeStatusFiles = true) {
   const statusFile = path.join(BANK_STATUS_DIR, `${bookName}.json`);
   let recordCount = 0;
   let status = 'OK';
@@ -140,7 +178,7 @@ function verifyBook(db, bookName, bookDef) {
     }
   }
 
-  // Write individual book status
+  // Write individual book status (non-fatal)
   const bookStatus = {
     bookName,
     label: bookDef.label,
@@ -150,10 +188,8 @@ function verifyBook(db, bookName, bookDef) {
     lastVerified: new Date().toISOString(),
   };
 
-  try {
-    fs.writeFileSync(statusFile, JSON.stringify(bookStatus, null, 2));
-  } catch (e) {
-    // Non-fatal: status file is informational only
+  if (writeStatusFiles) {
+    safeWriteFile(statusFile, JSON.stringify(bookStatus, null, 2));
   }
 
   return bookStatus;
