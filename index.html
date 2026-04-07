@@ -1957,7 +1957,7 @@ const Sidebar = ({ page, setPage, t, lang, setLang, collapsed, setCollapsed, cur
 // =====================================================================
 // HEADER
 // =====================================================================
-const Header = ({ page, t, data, updateData, currentUser, onLogout, onProfile, isAdminUser, portalMode, setPortalMode, onTheme, onCert }) => {
+const Header = ({ page, t, data, updateData, currentUser, onLogout, onProfile, isAdminUser, isSuperAdmin: isSuperAdminProp, portalMode, setPortalMode, onTheme, onCert }) => {
   const [dropdown, setDropdown] = useState(false);
   const dropdownRef = useRef(null);
 
@@ -1984,12 +1984,12 @@ const Header = ({ page, t, data, updateData, currentUser, onLogout, onProfile, i
           <Icon name={icons[page]||'dashboard'} size={16}/>
         </div>
         <h1 className="header-title-text text-lg sm:text-xl font-bold text-white truncate">{titles[page]||page}</h1>
-        {isAdminUser && <span className={`header-badge badge text-[10px] ml-1 flex-shrink-0 ${portalMode==='admin'?'badge-yellow':'badge-blue'}`}>
+        {isSuperAdminProp && <span className={`header-badge badge text-[10px] ml-1 flex-shrink-0 ${portalMode==='admin'?'badge-yellow':'badge-blue'}`}>
           {portalMode==='admin' ? t.common.adminPortal : t.common.memberPortal}
         </span>}
       </div>
       <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-        {isAdminUser && <button onClick={()=>setPortalMode(portalMode==='admin'?'member':'admin')}
+        {isSuperAdminProp && <button onClick={()=>setPortalMode(portalMode==='admin'?'member':'admin')}
           className="p-1.5 sm:p-2 rounded-lg hover:bg-dark-700 transition-colors text-gray-400 hover:text-gold-400" title={t.common.switchPortal}>
           <Icon name="swap" size={16}/>
         </button>}
@@ -2034,12 +2034,54 @@ const Header = ({ page, t, data, updateData, currentUser, onLogout, onProfile, i
 };
 
 // =====================================================================
+// ERROR BOUNDARY — Catches render crashes, prevents white screen
+// =====================================================================
+class PortalErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null, errorInfo: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    this.setState({ errorInfo });
+    console.error(`[ErrorBoundary:${this.props.portal || 'unknown'}]`, error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      const portal = this.props.portal || 'Portal';
+      return React.createElement('div', {
+        className: 'flex flex-col items-center justify-center h-full p-8 text-center'
+      },
+        React.createElement('div', { className: 'text-6xl mb-4' }, '⚠️'),
+        React.createElement('h2', { className: 'text-xl font-bold text-white mb-2' },
+          `${portal} encountered an error`),
+        React.createElement('p', { className: 'text-gray-400 mb-4 max-w-md' },
+          'Something went wrong loading this view. Your data is safe.'),
+        React.createElement('pre', {
+          className: 'text-xs text-red-400 bg-dark-800 rounded-lg p-3 max-w-lg overflow-auto mb-4 max-h-32'
+        }, this.state.error?.message || 'Unknown error'),
+        React.createElement('button', {
+          onClick: () => this.setState({ hasError: false, error: null, errorInfo: null }),
+          className: 'px-4 py-2 bg-gold-500 hover:bg-gold-600 text-dark-900 rounded-lg font-semibold transition-colors'
+        }, 'Retry')
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// =====================================================================
 // DASHBOARD
 // =====================================================================
 const Dashboard = ({ data, updateData, t, currentUser }) => {
   const isAdmin = ['superadmin','admin'].includes(currentUser?.role);
-  return isAdmin ? <AdminDashboard data={data} updateData={updateData} t={t} currentUser={currentUser}/>
-                 : <MemberDashboard data={data} updateData={updateData} t={t} currentUser={currentUser}/>;
+  const portalName = isAdmin ? 'Admin Portal' : 'Member Portal';
+  return React.createElement(PortalErrorBoundary, { portal: portalName },
+    isAdmin ? React.createElement(AdminDashboard, { data, updateData, t, currentUser })
+            : React.createElement(MemberDashboard, { data, updateData, t, currentUser })
+  );
 };
 
 const WelcomeBanner = ({ t, currentUser, data, updateData }) => {
@@ -7487,6 +7529,13 @@ function App() {
     }
   }, [themeKey]);
 
+  // Safety guard: only superadmin may use member portal mode
+  useEffect(() => {
+    if (currentUser && currentUser.role !== 'superadmin' && portalMode !== 'admin') {
+      setPortalMode('admin');
+    }
+  }, [currentUser, portalMode]);
+
   // Keys that persist to backend settings API
   const PERSISTED_SETTINGS = ['bannerPhotos', 'bannerPositions', 'userPermissions', 'rolePermissions', 'themePreference'];
 
@@ -7659,9 +7708,10 @@ function App() {
     return <AuthScreen t={t} lang={lang} setLang={setLang} onLogin={handleLogin} data={data} updateData={updateData}/>;
   }
 
-  // Portal switch: when in member mode, admin/superadmin sees only member pages
+  // Portal switch: ONLY superadmin can switch portals
+  const isSuperAdminUser = currentUser.role === 'superadmin';
   const isAdminUser = ['superadmin','admin'].includes(currentUser.role);
-  const effectiveRole = (isAdminUser && portalMode === 'member') ? 'member' : (currentUser.role || 'member');
+  const effectiveRole = (isSuperAdminUser && portalMode === 'member') ? 'member' : (currentUser.role || 'member');
 
   // Dynamic role-based page access from stored permissions
   const rp = data.rolePermissions || EMPTY_DATA.rolePermissions;
@@ -7669,7 +7719,11 @@ function App() {
 
   // Check user-specific overrides first, then fall back to role defaults
   const up = data.userPermissions || {};
+  // Pages accessible to ALL authenticated users regardless of permissions
+  const UNIVERSAL_PAGES = ['dashboard', 'settings'];
+
   const canAccessPage = (pageId, role, userId) => {
+    if (UNIVERSAL_PAGES.includes(pageId)) return true;
     if (role === 'superadmin') return true;
     if (userId && up[userId]) return up[userId].includes(pageId);
     const rolePages = rp[role] || rp.member || [];
@@ -7702,10 +7756,12 @@ function App() {
         mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} hasLiveSpaces={(data.spaces||[]).some(s=>s.status==='live')}/>
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <Header page={page} t={t} data={data} updateData={updateData} currentUser={currentUser} onLogout={handleLogout}
-          onProfile={()=>setProfileOpen(true)} isAdminUser={isAdminUser} portalMode={portalMode} setPortalMode={setPortalMode}
+          onProfile={()=>setProfileOpen(true)} isAdminUser={isAdminUser} isSuperAdmin={isSuperAdminUser} portalMode={portalMode} setPortalMode={setPortalMode}
           onTheme={()=>setThemeOpen(true)} onCert={()=>setCertOpen(true)}/>
         <main className="main-content-area flex-1 overflow-y-auto p-5">
-          <PageComponent data={data} updateData={updateData} t={t} currentUser={{...currentUser, role: effectiveRole}}/>
+          <PortalErrorBoundary portal={effectiveRole === 'member' ? 'Member Portal' : 'Admin Portal'} key={page}>
+            <PageComponent data={data} updateData={updateData} t={t} currentUser={{...currentUser, role: effectiveRole}}/>
+          </PortalErrorBoundary>
         </main>
       </div>
       <ProfileModal isOpen={profileOpen} onClose={()=>setProfileOpen(false)} t={t} currentUser={currentUser} data={data} updateData={updateData} setCurrentUser={setCurrentUser}/>
