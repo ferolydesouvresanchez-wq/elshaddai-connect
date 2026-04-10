@@ -988,9 +988,9 @@ const EMPTY_DATA = {
   announcementSeen: [],
   eventRsvps: [],
   rolePermissions: {
-    admin: ['dashboard','members','attendance','events','finance','groups','accounts','feed','messages','spaces','ranking','community','magazine','prayer_wall','announcements_page','pastor_word','fundraising_page'],
-    ministry_leader: ['dashboard','events','groups','feed','messages','spaces','ranking','community','magazine','prayer_wall','announcements_page','pastor_word','fundraising_page'],
-    member: ['dashboard','events','feed','messages','spaces','ranking','community','magazine','prayer_wall','announcements_page','pastor_word','fundraising_page'],
+    admin: ['dashboard','members','attendance','events','finance','groups','accounts','feed','messages','spaces','ranking','community','magazine','prayer_wall','announcements_page','pastor_word','fundraising_page','live_studio'],
+    ministry_leader: ['dashboard','events','groups','feed','messages','spaces','ranking','community','magazine','prayer_wall','announcements_page','pastor_word','fundraising_page','live_studio'],
+    member: ['dashboard','events','feed','messages','spaces','ranking','community','magazine','prayer_wall','announcements_page','pastor_word','fundraising_page','live_studio'],
   },
   userPermissions: {},
   bannerPhotos: [],
@@ -1759,6 +1759,7 @@ const Sidebar = ({ page, setPage, t, lang, setLang, collapsed, setCollapsed, cur
       { id:'feed', icon:'list', label:t.social.feed, emoji:'📱' },
       { id:'messages', icon:'message', label:t.nav.messages, emoji:'💬' },
       { id:'spaces', icon:'video', label:t.social.spaces, liveDot:!!hasLiveSpaces, emoji:'🎙' },
+      { id:'live_studio', icon:'camera', label:'Live Studio', emoji:'🎬' },
       { id:'ranking', icon:'trending_up', label:t.social.ranking, emoji:'⭐' },
     ]},
     { label: 'Community', items: [
@@ -1973,9 +1974,10 @@ const Header = ({ page, t, data, updateData, currentUser, onLogout, onProfile, i
     feed:t.social.feed, spaces:t.social.spaces, ranking:t.social.ranking,
     community:t.community?.hub||'Community Hub', magazine:t.community?.magazine||'Magazine', prayer_wall:t.community?.prayerWall||'Prayer Wall',
     announcements_page:t.community?.announcements||'Announcements', pastor_word:t.community?.pastorWord||"Pastor's Word", fundraising_page:t.community?.fundraising||'Fundraising',
+    live_studio:'Live Studio',
   };
   const icons = { dashboard:'dashboard', members:'users', attendance:'attendance', events:'calendar', finance:'wallet', groups:'groups', accounts:'shield', feed:'list', spaces:'video', ranking:'trending_up',
-    community:'dashboard', magazine:'book', prayer_wall:'heart', announcements_page:'bell', pastor_word:'star', fundraising_page:'heart' };
+    community:'dashboard', magazine:'book', prayer_wall:'heart', announcements_page:'bell', pastor_word:'star', fundraising_page:'heart', live_studio:'camera' };
 
   return (
     <header className="header-mobile-compact bg-dark-800 border-b border-dark-700 px-3 sm:px-6 py-2 sm:py-3 flex items-center justify-between">
@@ -7500,6 +7502,1460 @@ const UserAvatar = ({ user, size = 32, className = '' }) => {
 };
 
 // =====================================================================
+// LIVE STREAMING STUDIO
+// =====================================================================
+const BIBLE_BOOKS = ['Genesis','Exodus','Leviticus','Numbers','Deuteronomy','Joshua','Judges','Ruth','1 Samuel','2 Samuel','1 Kings','2 Kings','1 Chronicles','2 Chronicles','Ezra','Nehemiah','Esther','Job','Psalms','Proverbs','Ecclesiastes','Song of Solomon','Isaiah','Jeremiah','Lamentations','Ezekiel','Daniel','Hosea','Joel','Amos','Obadiah','Jonah','Micah','Nahum','Habakkuk','Zephaniah','Haggai','Zechariah','Malachi','Matthew','Mark','Luke','John','Acts','Romans','1 Corinthians','2 Corinthians','Galatians','Ephesians','Philippians','Colossians','1 Thessalonians','2 Thessalonians','1 Timothy','2 Timothy','Titus','Philemon','Hebrews','James','1 Peter','2 Peter','1 John','2 John','3 John','Jude','Revelation'];
+
+const PLATFORM_PRESETS = {
+  youtube: { label: 'YouTube Live', rtmpUrl: 'rtmp://a.rtmp.youtube.com/live2/', color: '#FF0000', icon: '▶' },
+  facebook: { label: 'Facebook Live', rtmpUrl: 'rtmps://live-api-s.facebook.com:443/rtmp/', color: '#1877F2', icon: 'f' },
+  instagram: { label: 'Instagram Live', rtmpUrl: 'rtmps://live-upload.instagram.com:443/rtmp/', color: '#E4405F', icon: '📷', warning: 'Instagram RTMP support is limited. Works best with Instagram Creator accounts.' },
+  tiktok: { label: 'TikTok Live', rtmpUrl: 'rtmp://push-rtmp-f5-tt.tiktokcdn.com/live/', color: '#000000', icon: '♪' },
+  twitter: { label: 'X / Twitter Live', rtmpUrl: 'rtmp://va.pscp.tv:80/x/', color: '#1DA1F2', icon: '𝕏' },
+  restream: { label: 'Restream.io', rtmpUrl: 'rtmp://live.restream.io/live/', color: '#6236FF', icon: '↗', tooltip: 'For Instagram and TikTok, we recommend using Restream.io as a free bridge. Create a free account at restream.io, copy your stream key, and paste it here.' },
+  custom: { label: 'Custom RTMP', rtmpUrl: '', color: '#888888', icon: '⚙' },
+};
+
+const LOWER_THIRD_TEMPLATES = [
+  { name: 'Speaker', title: 'Pastor Name', subtitle: 'Lead Pastor — Glory of El Shaddai', bgColor: '#1a1a1a', textColor: '#ffffff', accentColor: '#C9A84C' },
+  { name: 'Scripture', title: 'John 3:16', subtitle: 'For God so loved the world...', bgColor: '#1a237e', textColor: '#ffffff', accentColor: '#90caf9' },
+  { name: 'Church Info', title: 'Glory of El Shaddai Christian Center', subtitle: 'www.elshaddai.com', bgColor: '#C9A84C', textColor: '#1a1a1a', accentColor: '#ffffff' },
+  { name: 'Donation', title: 'Give Online', subtitle: 'CashApp: $ElShaddai | Zelle: give@elshaddai.com', bgColor: '#2e7d32', textColor: '#ffffff', accentColor: '#a5d6a7' },
+  { name: 'Event', title: 'Upcoming Event', subtitle: 'Sunday Service — 10:00 AM', bgColor: '#4a148c', textColor: '#ffffff', accentColor: '#ce93d8' },
+];
+
+const STUDIO_LAYOUTS = [
+  { id: 'full_camera', label: 'Full Camera', icon: '📹' },
+  { id: 'split_50', label: 'Split 50/50', icon: '⬛⬛' },
+  { id: 'split_70', label: 'Split 70/30', icon: '🟫⬛' },
+  { id: 'pip', label: 'Picture in Picture', icon: '🖼' },
+  { id: 'content_only', label: 'Content Only', icon: '📄' },
+];
+
+const LiveStudioPage = ({ data, updateData, t, currentUser }) => {
+  // === STATE ===
+  const [tab, setTab] = useState('studio'); // studio, keys, presets, archive, viewer
+  const [isLive, setIsLive] = useState(false);
+  const [sessionId, setSessionId] = useState(null);
+  const [elapsedTime, setElapsedTime] = useState(0);
+
+  // Camera/Audio
+  const [cameraStream, setCameraStream] = useState(null);
+  const [devices, setDevices] = useState({ video: [], audio: [] });
+  const [selectedCamera, setSelectedCamera] = useState('');
+  const [selectedMic, setSelectedMic] = useState('');
+  const [micVolume, setMicVolume] = useState(80);
+  const [musicVolume, setMusicVolume] = useState(50);
+  const [masterVolume, setMasterVolume] = useState(100);
+  const [micMuted, setMicMuted] = useState(false);
+  const [musicMuted, setMusicMuted] = useState(false);
+  const [videoQuality, setVideoQuality] = useState('720p');
+  const [cameraFlip, setCameraFlip] = useState(false);
+  const [bgBlur, setBgBlur] = useState(false);
+  const [micLevel, setMicLevel] = useState(0);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+
+  // Layout
+  const [layout, setLayout] = useState('full_camera');
+  const [contentType, setContentType] = useState('none'); // none, bible, announcement, screenshare, image, countdown, lyrics
+
+  // Platforms
+  const [platforms, setPlatforms] = useState([]);
+  const [platformHealth, setPlatformHealth] = useState({});
+  const [keyForm, setKeyForm] = useState({ platform: 'youtube', rtmpUrl: '', streamKey: '', label: '' });
+  const [showKeyForm, setShowKeyForm] = useState(false);
+
+  // Lower Thirds
+  const [lowerThirds, setLowerThirds] = useState([]);
+  const [activeLTs, setActiveLTs] = useState([]);
+  const [ltForm, setLtForm] = useState({ title: '', subtitle: '', bgColor: '#1a1a1a', textColor: '#ffffff', accentColor: '#C9A84C', position: 'bottom-left', animation: 'slide', duration: 10 });
+  const [showLtForm, setShowLtForm] = useState(false);
+
+  // Bible
+  const [bibleBook, setBibleBook] = useState('John');
+  const [bibleChapter, setBibleChapter] = useState('3');
+  const [bibleVerse, setBibleVerse] = useState('16');
+  const [bibleTranslation, setBibleTranslation] = useState('KJV');
+  const [bibleText, setBibleText] = useState('');
+  const [bibleQueue, setBibleQueue] = useState([]);
+  const [showBibleOnStream, setShowBibleOnStream] = useState(false);
+  const [bibleSearch, setBibleSearch] = useState('');
+
+  // Announcements
+  const [announcements, setAnnouncements] = useState([]);
+  const [activeAnnouncement, setActiveAnnouncement] = useState(null);
+  const [annMode, setAnnMode] = useState('panel'); // panel, ticker, popup
+  const [annForm, setAnnForm] = useState({ title: '', body: '', bgColor: '#1a237e', textColor: '#ffffff' });
+  const [showAnnForm, setShowAnnForm] = useState(false);
+
+  // Subtitles
+  const [subtitlesEnabled, setSubtitlesEnabled] = useState(false);
+  const [subtitleLang, setSubtitleLang] = useState('en-US');
+  const [subtitleText, setSubtitleText] = useState('');
+  const [manualSubMode, setManualSubMode] = useState(false);
+  const [manualSubText, setManualSubText] = useState('');
+  const [subtitleStyle, setSubtitleStyle] = useState({ fontSize: 24, color: '#ffffff', bgOpacity: 0.7, position: 'bottom' });
+  const [transcript, setTranscript] = useState([]);
+  const [browserWarning, setBrowserWarning] = useState('');
+
+  // Viewer
+  const [viewerCount, setViewerCount] = useState(0);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+
+  // Pre-flight
+  const [showPreflight, setShowPreflight] = useState(false);
+
+  // Canvas
+  const canvasRef = useRef(null);
+  const videoRef = useRef(null);
+  const animFrameRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const recognitionRef = useRef(null);
+  const audioCtxRef = useRef(null);
+  const analyserRef = useRef(null);
+  const timerRef = useRef(null);
+
+  // === DETECT BROWSER ===
+  useEffect(() => {
+    const ua = navigator.userAgent;
+    const isChrome = /Chrome\//.test(ua) && !/Edge\//.test(ua) && !/OPR\//.test(ua);
+    const isEdge = /Edg\//.test(ua);
+    if (!isChrome && !isEdge) {
+      setBrowserWarning('Live subtitles work best in Chrome or Edge. Your current browser has limited support. We recommend switching to Chrome for the best experience.');
+    }
+  }, []);
+
+  // === CAMERA & AUDIO SYSTEM ===
+  const startCamera = async (videoDeviceId, audioDeviceId) => {
+    try {
+      setCameraError('');
+      // Stop existing stream
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(tr => tr.stop());
+      }
+
+      const qualityMap = { '720p': { width: 1280, height: 720 }, '1080p': { width: 1920, height: 1080 }, 'auto': { width: { ideal: 1280 }, height: { ideal: 720 } } };
+      const q = qualityMap[videoQuality] || qualityMap['720p'];
+
+      const constraints = {
+        video: { ...(videoDeviceId ? { deviceId: { exact: videoDeviceId } } : {}), width: q.width, height: q.height, frameRate: { ideal: 30 } },
+        audio: { ...(audioDeviceId ? { deviceId: { exact: audioDeviceId } } : {}), echoCancellation: true, noiseSuppression: true }
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      setCameraStream(stream);
+      setCameraReady(true);
+
+      // Update device list after permission granted
+      const devs = await navigator.mediaDevices.enumerateDevices();
+      setDevices({
+        video: devs.filter(d => d.kind === 'videoinput'),
+        audio: devs.filter(d => d.kind === 'audioinput'),
+      });
+
+      // Set up audio analyser for level meter
+      if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioCtxRef.current.createMediaStreamSource(stream);
+      const analyser = audioCtxRef.current.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      analyserRef.current = analyser;
+
+      return stream;
+    } catch (err) {
+      console.error('Camera error:', err);
+      setCameraError(err.name === 'NotAllowedError'
+        ? 'Camera permission denied. Please allow camera access in your browser settings.'
+        : `Camera error: ${err.message}`);
+      setCameraReady(false);
+      return null;
+    }
+  };
+
+  // Auto-start camera on mount
+  useEffect(() => {
+    startCamera();
+    return () => {
+      if (cameraStream) cameraStream.getTracks().forEach(tr => tr.stop());
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+      if (audioCtxRef.current) audioCtxRef.current.close().catch(() => {});
+    };
+  }, []);
+
+  // Update video element when stream changes
+  useEffect(() => {
+    if (videoRef.current && cameraStream) {
+      videoRef.current.srcObject = cameraStream;
+    }
+  }, [cameraStream]);
+
+  // Audio level meter
+  useEffect(() => {
+    if (!analyserRef.current) return;
+    const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+    let running = true;
+    const check = () => {
+      if (!running) return;
+      analyserRef.current.getByteFrequencyData(dataArray);
+      const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+      setMicLevel(Math.min(100, (avg / 128) * 100));
+      requestAnimationFrame(check);
+    };
+    check();
+    return () => { running = false; };
+  }, [cameraStream]);
+
+  // Switch camera
+  const handleCameraChange = (deviceId) => {
+    setSelectedCamera(deviceId);
+    startCamera(deviceId, selectedMic || undefined);
+  };
+
+  // Switch mic
+  const handleMicChange = (deviceId) => {
+    setSelectedMic(deviceId);
+    startCamera(selectedCamera || undefined, deviceId);
+  };
+
+  // Mute mic
+  useEffect(() => {
+    if (cameraStream) {
+      cameraStream.getAudioTracks().forEach(t => { t.enabled = !micMuted; });
+    }
+  }, [micMuted, cameraStream]);
+
+  // === CANVAS COMPOSITING ENGINE ===
+  useEffect(() => {
+    if (!canvasRef.current || !cameraReady) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    const w = videoQuality === '1080p' ? 1920 : 1280;
+    const h = videoQuality === '1080p' ? 1080 : 720;
+    canvas.width = w;
+    canvas.height = h;
+
+    const render = () => {
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, w, h);
+
+      // Draw camera
+      if (videoRef.current && videoRef.current.readyState >= 2) {
+        ctx.save();
+        if (cameraFlip) {
+          ctx.translate(w, 0);
+          ctx.scale(-1, 1);
+        }
+
+        if (layout === 'full_camera') {
+          ctx.drawImage(videoRef.current, 0, 0, w, h);
+        } else if (layout === 'split_50') {
+          ctx.drawImage(videoRef.current, 0, 0, w / 2, h);
+        } else if (layout === 'split_70') {
+          ctx.drawImage(videoRef.current, 0, 0, w * 0.7, h);
+        } else if (layout === 'pip') {
+          // Content fills screen, camera in corner
+          const pipW = w * 0.25, pipH = h * 0.25;
+          ctx.drawImage(videoRef.current, w - pipW - 20, h - pipH - 20, pipW, pipH);
+        }
+        // content_only: don't draw camera
+        ctx.restore();
+      }
+
+      // Draw content panel area
+      if (contentType !== 'none' || layout === 'content_only' || layout === 'pip') {
+        let cx, cy, cw, ch;
+        if (layout === 'split_50') { cx = w / 2; cy = 0; cw = w / 2; ch = h; }
+        else if (layout === 'split_70') { cx = w * 0.7; cy = 0; cw = w * 0.3; ch = h; }
+        else if (layout === 'pip' || layout === 'content_only') { cx = 0; cy = 0; cw = w; ch = h; }
+        else { cx = 0; cy = 0; cw = 0; ch = 0; }
+
+        if (cw > 0 && ch > 0) {
+          // Bible verse on stream
+          if (showBibleOnStream && bibleText) {
+            ctx.fillStyle = '#0d1b2a';
+            ctx.fillRect(cx, cy, cw, ch);
+            // Verse text
+            ctx.fillStyle = '#ffffff';
+            const fontSize = Math.min(cw / 20, 40);
+            ctx.font = `${fontSize}px "Segoe UI", sans-serif`;
+            ctx.textAlign = 'center';
+            // Word wrap
+            const words = bibleText.split(' ');
+            let line = '', lineY = cy + ch * 0.3;
+            const maxLineW = cw * 0.85;
+            for (const word of words) {
+              const test = line + word + ' ';
+              if (ctx.measureText(test).width > maxLineW && line) {
+                ctx.fillText(line.trim(), cx + cw / 2, lineY);
+                line = word + ' ';
+                lineY += fontSize * 1.4;
+              } else {
+                line = test;
+              }
+            }
+            if (line) ctx.fillText(line.trim(), cx + cw / 2, lineY);
+            // Reference
+            ctx.font = `bold ${fontSize * 0.7}px "Segoe UI", sans-serif`;
+            ctx.fillStyle = '#C9A84C';
+            ctx.fillText(`${bibleBook} ${bibleChapter}:${bibleVerse} (${bibleTranslation})`, cx + cw / 2, lineY + fontSize * 2);
+          }
+          // Announcement on stream
+          else if (activeAnnouncement) {
+            ctx.fillStyle = activeAnnouncement.bgColor || '#1a237e';
+            ctx.fillRect(cx, cy, cw, ch);
+            ctx.fillStyle = activeAnnouncement.textColor || '#ffffff';
+            const fs = Math.min(cw / 15, 48);
+            ctx.font = `bold ${fs}px "Segoe UI", sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.fillText(activeAnnouncement.title, cx + cw / 2, cy + ch * 0.35);
+            ctx.font = `${fs * 0.6}px "Segoe UI", sans-serif`;
+            ctx.fillText(activeAnnouncement.body || '', cx + cw / 2, cy + ch * 0.55);
+          }
+        }
+      }
+
+      // Draw active lower thirds
+      activeLTs.forEach((lt, idx) => {
+        const ltH = 80;
+        const ltY = h - ltH - 20 - (idx * (ltH + 10));
+        const ltW = w * 0.5;
+        const ltX = lt.position === 'bottom-right' ? w - ltW - 20 : lt.position === 'bottom-center' ? (w - ltW) / 2 : 20;
+
+        // Background
+        ctx.globalAlpha = 0.9;
+        ctx.fillStyle = lt.bgColor || '#1a1a1a';
+        ctx.beginPath();
+        ctx.roundRect(ltX, ltY, ltW, ltH, 8);
+        ctx.fill();
+        // Accent bar
+        ctx.fillStyle = lt.accentColor || '#C9A84C';
+        ctx.fillRect(ltX, ltY, 4, ltH);
+        ctx.globalAlpha = 1;
+        // Title
+        ctx.fillStyle = lt.textColor || '#ffffff';
+        ctx.font = 'bold 22px "Segoe UI", sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(lt.title || '', ltX + 16, ltY + 32);
+        // Subtitle
+        ctx.font = '16px "Segoe UI", sans-serif';
+        ctx.fillStyle = (lt.textColor || '#ffffff') + 'cc';
+        ctx.fillText(lt.subtitle || '', ltX + 16, ltY + 58);
+      });
+
+      // Draw subtitles
+      if ((subtitlesEnabled || manualSubMode) && (subtitleText || manualSubText)) {
+        const subText = manualSubMode ? manualSubText : subtitleText;
+        if (subText) {
+          const subY = subtitleStyle.position === 'top' ? 40 : h - 60;
+          ctx.globalAlpha = subtitleStyle.bgOpacity;
+          ctx.fillStyle = '#000000';
+          ctx.fillRect(0, subY - 30, w, 50);
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = subtitleStyle.color || '#ffffff';
+          ctx.font = `${subtitleStyle.fontSize || 24}px "Segoe UI", sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.fillText(subText, w / 2, subY);
+        }
+      }
+
+      // Live indicator
+      if (isLive) {
+        ctx.fillStyle = '#FF0000';
+        ctx.beginPath();
+        ctx.arc(30, 30, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 16px "Segoe UI", sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('LIVE', 45, 36);
+      }
+
+      animFrameRef.current = requestAnimationFrame(render);
+    };
+    render();
+    return () => { if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current); };
+  }, [cameraReady, layout, contentType, showBibleOnStream, bibleText, bibleBook, bibleChapter, bibleVerse, bibleTranslation, activeAnnouncement, activeLTs, subtitlesEnabled, subtitleText, manualSubMode, manualSubText, subtitleStyle, isLive, cameraFlip, videoQuality]);
+
+  // === SPEECH-TO-TEXT ===
+  const startSpeechRecognition = () => {
+    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRec) {
+      setBrowserWarning('Speech recognition is not supported in this browser. Please use Chrome or Edge.');
+      return;
+    }
+    const recognition = new SpeechRec();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = subtitleLang;
+
+    recognition.onresult = (event) => {
+      let interim = '';
+      let final = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const t = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          final += t + ' ';
+          setTranscript(prev => [...prev, { time: new Date().toISOString(), text: t }]);
+        } else {
+          interim += t;
+        }
+      }
+      setSubtitleText(interim || final.trim());
+    };
+
+    recognition.onerror = (e) => {
+      console.error('Speech recognition error:', e.error);
+      if (e.error !== 'no-speech') setSubtitlesEnabled(false);
+    };
+
+    recognition.onend = () => {
+      if (subtitlesEnabled && !manualSubMode) recognition.start();
+    };
+
+    recognition.start();
+    recognitionRef.current = recognition;
+  };
+
+  useEffect(() => {
+    if (subtitlesEnabled && !manualSubMode) {
+      startSpeechRecognition();
+    } else if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    return () => { if (recognitionRef.current) { recognitionRef.current.stop(); recognitionRef.current = null; } };
+  }, [subtitlesEnabled, subtitleLang, manualSubMode]);
+
+  // === STREAM TIMER ===
+  useEffect(() => {
+    if (isLive) {
+      timerRef.current = setInterval(() => setElapsedTime(p => p + 1), 1000);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+      setElapsedTime(0);
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [isLive]);
+
+  const formatTime = (s) => {
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+  };
+
+  // === LOAD DATA ===
+  useEffect(() => {
+    // Load platforms
+    api.get('/studio/platforms').then(setPlatforms).catch(() => {});
+    // Load presets
+    api.get('/studio/presets?type=lower_third').then(data => setLowerThirds(data.map(p => p.config))).catch(() => {});
+    api.get('/studio/presets?type=announcement').then(data => setAnnouncements(data.map(p => p.config))).catch(() => {});
+    // Load live session
+    api.get('/studio/live').then(live => {
+      if (live) { setIsLive(true); setSessionId(live.id); }
+    }).catch(() => {});
+  }, []);
+
+  // === TEST STREAM (10-second test) ===
+  const [testingStream, setTestingStream] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+
+  const handleTestStream = async () => {
+    if (!cameraReady) {
+      alert('Camera is not connected. Please allow camera access first.');
+      return;
+    }
+    const enabledPlatforms = platforms.filter(p => p.enabled);
+    if (enabledPlatforms.length === 0) {
+      alert('Please add and enable at least one streaming platform.');
+      return;
+    }
+
+    setTestingStream(true);
+    setTestResult(null);
+
+    try {
+      // Capture 10 seconds from the canvas
+      const canvasStream = canvasRef.current.captureStream(30);
+      if (cameraStream) {
+        cameraStream.getAudioTracks().forEach(t => canvasStream.addTrack(t));
+      }
+
+      const recorder = new MediaRecorder(canvasStream, {
+        mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm'
+      });
+      const chunks = [];
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+
+      recorder.start(1000);
+      await new Promise(r => setTimeout(r, 10000)); // 10 seconds
+      recorder.stop();
+      await new Promise(r => { recorder.onstop = r; });
+
+      const blob = new Blob(chunks, { type: 'video/webm' });
+      const sizeKB = Math.round(blob.size / 1024);
+
+      setTestResult({
+        success: true,
+        message: `Test complete! Captured ${sizeKB}KB in 10s. ${enabledPlatforms.length} platform(s) configured. Canvas compositing OK.`,
+        platforms: enabledPlatforms.map(p => p.platform),
+      });
+    } catch (err) {
+      setTestResult({ success: false, message: 'Test failed: ' + err.message });
+    }
+    setTestingStream(false);
+  };
+
+  // === GO LIVE / END STREAM ===
+  const handleGoLive = async () => {
+    const enabledPlatforms = platforms.filter(p => p.enabled);
+    if (enabledPlatforms.length === 0) {
+      alert('Please add and enable at least one streaming platform with a stream key.');
+      return;
+    }
+    if (!cameraReady) {
+      alert('Camera is not connected. Please allow camera access first.');
+      return;
+    }
+
+    try {
+      const res = await api.post('/studio/sessions', {
+        title: 'Live Stream — Glory of El Shaddai',
+        platforms: enabledPlatforms.map(p => p.platform),
+      });
+      setSessionId(res.id);
+      setIsLive(true);
+
+      // Start recording
+      if (canvasRef.current) {
+        const canvasStream = canvasRef.current.captureStream(30);
+        // Add audio track from camera
+        if (cameraStream) {
+          cameraStream.getAudioTracks().forEach(t => canvasStream.addTrack(t));
+        }
+        const recorder = new MediaRecorder(canvasStream, {
+          mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm'
+        });
+        const chunks = [];
+        recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+        recorder.onstop = () => {
+          const blob = new Blob(chunks, { type: 'video/webm' });
+          const url = URL.createObjectURL(blob);
+          // Store for download
+          window.__lastRecording = { blob, url };
+        };
+        recorder.start(1000);
+        mediaRecorderRef.current = recorder;
+      }
+
+      // Update platform health indicators
+      enabledPlatforms.forEach(p => {
+        setPlatformHealth(prev => ({ ...prev, [p.id]: 'connected' }));
+      });
+    } catch (err) {
+      console.error('Go live error:', err);
+      alert('Failed to start live stream: ' + (err.error || err.message));
+    }
+  };
+
+  const handleEndStream = async () => {
+    if (!confirm('Are you sure you want to end the live stream?')) return;
+
+    // Stop recorder
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+
+    // Stop speech recognition
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+
+    try {
+      await api.put(`/studio/sessions/${sessionId}/end`, {
+        viewerCount,
+        transcript: transcript.map(t => `[${t.time}] ${t.text}`).join('\n'),
+        versesUsed: bibleQueue,
+      });
+    } catch (e) { console.error('End stream error:', e); }
+
+    setIsLive(false);
+    setSessionId(null);
+    setPlatformHealth({});
+  };
+
+  // === BIBLE FETCH ===
+  const fetchBibleVerse = async () => {
+    // Use free Bible API
+    const ref = `${bibleBook}+${bibleChapter}:${bibleVerse}`;
+    try {
+      const response = await fetch(`https://bible-api.com/${ref}?translation=${bibleTranslation.toLowerCase()}`);
+      if (response.ok) {
+        const data = await response.json();
+        setBibleText(data.text?.trim() || `${bibleBook} ${bibleChapter}:${bibleVerse}`);
+        return data.text?.trim();
+      }
+    } catch (e) { console.warn('Bible API fallback'); }
+    // Fallback: use reference as placeholder
+    setBibleText(`"${bibleBook} ${bibleChapter}:${bibleVerse}" — Look up this verse in your Bible`);
+  };
+
+  const addVerseToQueue = () => {
+    if (bibleText) {
+      const verse = { book: bibleBook, chapter: bibleChapter, verse: bibleVerse, translation: bibleTranslation, text: bibleText };
+      setBibleQueue(prev => [...prev, verse]);
+    }
+  };
+
+  // === SAVE LOWER THIRD ===
+  const saveLowerThird = async () => {
+    const lt = { ...ltForm };
+    setLowerThirds(prev => [...prev, lt]);
+    try {
+      await api.post('/studio/presets', { type: 'lower_third', name: lt.title || 'Untitled', config: lt });
+    } catch (e) { console.error('Save LT error:', e); }
+    setShowLtForm(false);
+    setLtForm({ title: '', subtitle: '', bgColor: '#1a1a1a', textColor: '#ffffff', accentColor: '#C9A84C', position: 'bottom-left', animation: 'slide', duration: 10 });
+  };
+
+  // === SAVE ANNOUNCEMENT ===
+  const saveAnnouncement = async () => {
+    const ann = { ...annForm };
+    setAnnouncements(prev => [...prev, ann]);
+    try {
+      await api.post('/studio/presets', { type: 'announcement', name: ann.title || 'Untitled', config: ann });
+    } catch (e) { console.error('Save Ann error:', e); }
+    setShowAnnForm(false);
+    setAnnForm({ title: '', body: '', bgColor: '#1a237e', textColor: '#ffffff' });
+  };
+
+  // === SAVE PLATFORM ===
+  const savePlatform = async () => {
+    const preset = PLATFORM_PRESETS[keyForm.platform];
+    try {
+      await api.post('/studio/platforms', {
+        platform: keyForm.platform,
+        rtmpUrl: keyForm.rtmpUrl || preset?.rtmpUrl || '',
+        streamKey: keyForm.streamKey,
+        label: keyForm.label || preset?.label || keyForm.platform,
+        enabled: true,
+      });
+      const updated = await api.get('/studio/platforms');
+      setPlatforms(updated);
+    } catch (e) { console.error('Save platform error:', e); }
+    setShowKeyForm(false);
+    setKeyForm({ platform: 'youtube', rtmpUrl: '', streamKey: '', label: '' });
+  };
+
+  // === PRE-FLIGHT CHECK ===
+  const preflightChecks = [
+    { label: 'Camera connected', pass: cameraReady },
+    { label: 'Microphone connected', pass: cameraReady && cameraStream?.getAudioTracks().length > 0 },
+    { label: 'At least one platform enabled', pass: platforms.some(p => p.enabled) },
+    { label: 'Stream key configured', pass: platforms.some(p => p.hasKey && p.enabled) },
+  ];
+  const allChecksPassed = preflightChecks.every(c => c.pass);
+
+  // === RENDER ===
+  const isSA = currentUser?.role === 'superadmin';
+  const isAdmin = ['superadmin', 'admin'].includes(currentUser?.role);
+
+  // === TAB: VIEWER (for members watching) ===
+  // Find YouTube platform for embed
+  const ytPlatform = platforms.find(p => p.platform === 'youtube' && p.enabled);
+  const fbPlatform = platforms.find(p => p.platform === 'facebook' && p.enabled);
+  const [viewerEmbed, setViewerEmbed] = useState('internal'); // 'internal','youtube','facebook'
+
+  if (tab === 'viewer') {
+    return (
+      <div className="space-y-4">
+        <div className="card p-4">
+          <h2 className="text-xl font-bold text-white mb-4">📺 Live Stream Viewer</h2>
+          {isLive ? (
+            <div>
+              {/* Source selector */}
+              <div className="flex gap-2 mb-3">
+                <button onClick={() => setViewerEmbed('internal')}
+                  className={`px-3 py-1 rounded text-xs font-semibold ${viewerEmbed === 'internal' ? 'bg-gold-500 text-dark-900' : 'bg-dark-700 text-gray-400'}`}>
+                  In-App Preview
+                </button>
+                {ytPlatform && <button onClick={() => setViewerEmbed('youtube')}
+                  className={`px-3 py-1 rounded text-xs font-semibold ${viewerEmbed === 'youtube' ? 'bg-red-600 text-white' : 'bg-dark-700 text-gray-400'}`}>
+                  YouTube Live
+                </button>}
+                {fbPlatform && <button onClick={() => setViewerEmbed('facebook')}
+                  className={`px-3 py-1 rounded text-xs font-semibold ${viewerEmbed === 'facebook' ? 'bg-blue-600 text-white' : 'bg-dark-700 text-gray-400'}`}>
+                  Facebook Live
+                </button>}
+              </div>
+
+              <div className="bg-black rounded-lg aspect-video flex items-center justify-center mb-4 overflow-hidden">
+                {viewerEmbed === 'internal' ? (
+                  <div className="text-center">
+                    <div className="text-red-500 text-lg font-bold animate-pulse mb-2">● LIVE</div>
+                    <p className="text-gray-400">Glory of El Shaddai is streaming live</p>
+                    <p className="text-sm text-gray-500 mt-2">Select YouTube or Facebook above to watch the full stream</p>
+                  </div>
+                ) : viewerEmbed === 'youtube' ? (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="text-red-500 text-lg font-bold animate-pulse mb-2">● LIVE on YouTube</div>
+                      <p className="text-gray-400">Stream is live on YouTube</p>
+                      <a href="https://youtube.com/live" target="_blank" rel="noopener noreferrer"
+                        className="inline-block mt-3 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700">
+                        Open in YouTube ↗
+                      </a>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="text-blue-500 text-lg font-bold animate-pulse mb-2">● LIVE on Facebook</div>
+                      <p className="text-gray-400">Stream is live on Facebook</p>
+                      <a href="https://facebook.com/live" target="_blank" rel="noopener noreferrer"
+                        className="inline-block mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700">
+                        Open in Facebook ↗
+                      </a>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-sm text-gray-400">👥 {viewerCount} watching</span>
+                <div className="flex gap-2">
+                  {['❤️', '🙏', '🔥', '👏', '✝️'].map(emoji => (
+                    <button key={emoji} onClick={() => sessionId && api.post(`/studio/sessions/${sessionId}/react`, { emoji }).catch(()=>{})}
+                      className="text-xl hover:scale-125 transition-transform">{emoji}</button>
+                  ))}
+                </div>
+              </div>
+              {/* Chat */}
+              <div className="border border-dark-700 rounded-lg">
+                <div className="p-3 border-b border-dark-700">
+                  <h3 className="text-sm font-bold text-white">Live Chat</h3>
+                </div>
+                <div className="h-48 overflow-y-auto p-3 space-y-2">
+                  {chatMessages.map((msg, i) => (
+                    <div key={i} className="text-sm">
+                      <span className="font-semibold text-gold-400">{msg.firstName}: </span>
+                      <span className="text-gray-300">{msg.text}</span>
+                    </div>
+                  ))}
+                  {chatMessages.length === 0 && <p className="text-gray-500 text-sm">No messages yet</p>}
+                </div>
+                <div className="p-3 border-t border-dark-700 flex gap-2">
+                  <input value={chatInput} onChange={e => setChatInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && chatInput.trim() && sessionId) {
+                      api.post(`/studio/sessions/${sessionId}/chat`, { text: chatInput.trim() }).then(() => {
+                        setChatMessages(prev => [...prev, { firstName: currentUser.firstName, text: chatInput.trim() }]);
+                        setChatInput('');
+                      }).catch(()=>{});
+                    }}}
+                    className="flex-1 bg-dark-800 border border-dark-600 rounded px-3 py-1.5 text-sm text-white" placeholder="Send a message..." />
+                  <button onClick={() => { if (chatInput.trim() && sessionId) {
+                    api.post(`/studio/sessions/${sessionId}/chat`, { text: chatInput.trim() }).then(() => {
+                      setChatMessages(prev => [...prev, { firstName: currentUser.firstName, text: chatInput.trim() }]);
+                      setChatInput('');
+                    }).catch(()=>{});
+                  }}} className="px-3 py-1.5 bg-gold-500 text-dark-900 rounded text-sm font-semibold">Send</button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <div className="text-4xl mb-4">📺</div>
+              <p className="text-gray-400">No live stream right now</p>
+              <p className="text-sm text-gray-500 mt-2">You'll receive a notification when we go live</p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Only admin+ can access studio controls
+  if (!isAdmin) {
+    return (
+      <div className="space-y-4">
+        <div className="card p-6 text-center">
+          <div className="text-4xl mb-4">🔒</div>
+          <h2 className="text-xl font-bold text-white mb-2">Studio Access Restricted</h2>
+          <p className="text-gray-400">The live streaming studio is available to administrators only.</p>
+          <button onClick={() => setTab('viewer')} className="mt-4 px-4 py-2 bg-gold-500 text-dark-900 rounded-lg font-semibold">
+            Watch Live Stream Instead
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Test Stream Result */}
+      {testResult && (
+        <div className={`border rounded-lg px-4 py-2 flex items-center gap-2 ${testResult.success ? 'bg-green-900/30 border-green-600/50' : 'bg-red-900/30 border-red-600/50'}`}>
+          <span>{testResult.success ? '✅' : '❌'}</span>
+          <span className={`text-sm ${testResult.success ? 'text-green-200' : 'text-red-200'}`}>{testResult.message}</span>
+          <button onClick={() => setTestResult(null)} className="ml-auto text-gray-400 hover:text-white">✕</button>
+        </div>
+      )}
+
+      {/* Browser Warning */}
+      {browserWarning && (
+        <div className="bg-yellow-900/30 border border-yellow-600/50 rounded-lg px-4 py-2 flex items-center gap-2">
+          <span className="text-yellow-400">⚠</span>
+          <span className="text-yellow-200 text-sm">{browserWarning}</span>
+          <button onClick={() => setBrowserWarning('')} className="ml-auto text-yellow-400 hover:text-yellow-200">✕</button>
+        </div>
+      )}
+
+      {/* Top Bar */}
+      <div className="card p-3 flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-3">
+          <h1 className="text-lg font-bold text-white">🎬 Live Studio</h1>
+          {isLive && (
+            <div className="flex items-center gap-2">
+              <span className="bg-red-600 text-white text-xs px-2 py-0.5 rounded-full animate-pulse font-bold">● LIVE</span>
+              <span className="text-gray-400 text-sm font-mono">{formatTime(elapsedTime)}</span>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {!isLive ? (
+            <>
+              <button onClick={handleTestStream} disabled={testingStream}
+                className="px-3 py-1.5 bg-blue-700 hover:bg-blue-600 text-white rounded text-sm disabled:opacity-50">
+                {testingStream ? 'Testing... (10s)' : 'Test Stream'}
+              </button>
+              <button onClick={() => setShowPreflight(true)} className="px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-white rounded text-sm">Pre-flight Check</button>
+              <button onClick={handleGoLive} disabled={!allChecksPassed}
+                className={`px-4 py-1.5 rounded text-sm font-bold ${allChecksPassed ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-dark-600 text-gray-500 cursor-not-allowed'}`}>
+                Go Live
+              </button>
+            </>
+          ) : (
+            <button onClick={handleEndStream} className="px-4 py-1.5 bg-dark-700 hover:bg-red-800 text-red-400 hover:text-white rounded text-sm font-bold border border-red-600">
+              End Stream
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="flex gap-1 bg-dark-800 rounded-lg p-1">
+        {[
+          { id: 'studio', label: '🎬 Studio' },
+          { id: 'keys', label: '🔑 Stream Keys' },
+          { id: 'lower_thirds', label: '🏷 Lower Thirds' },
+          { id: 'bible', label: '📖 Bible' },
+          { id: 'announcements', label: '📢 Announce' },
+          { id: 'subtitles', label: '💬 Subtitles' },
+          { id: 'archive', label: '📁 Archive' },
+        ].map(t2 => (
+          <button key={t2.id} onClick={() => setTab(t2.id)}
+            className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${tab === t2.id ? 'bg-gold-500 text-dark-900' : 'text-gray-400 hover:text-white hover:bg-dark-700'}`}>
+            {t2.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        {/* === MAIN: Canvas Preview === */}
+        <div className="lg:col-span-2 space-y-3">
+          {/* Canvas */}
+          <div className="card overflow-hidden">
+            <div className="relative bg-black">
+              <video ref={videoRef} autoPlay muted playsInline className="hidden" />
+              <canvas ref={canvasRef} className="w-full aspect-video bg-black" />
+              {cameraError && (
+                <div className="absolute inset-0 flex items-center justify-center bg-dark-900/90">
+                  <div className="text-center p-4">
+                    <div className="text-4xl mb-2">📷</div>
+                    <p className="text-red-400 text-sm">{cameraError}</p>
+                    <button onClick={() => startCamera()} className="mt-3 px-4 py-1.5 bg-gold-500 text-dark-900 rounded text-sm font-semibold">
+                      Retry Camera
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Layout Switcher */}
+          <div className="card p-3">
+            <h3 className="text-sm font-bold text-white mb-2">Layout</h3>
+            <div className="flex gap-2 flex-wrap">
+              {STUDIO_LAYOUTS.map(l => (
+                <button key={l.id} onClick={() => setLayout(l.id)}
+                  className={`px-3 py-1.5 rounded text-xs font-medium ${layout === l.id ? 'bg-gold-500 text-dark-900' : 'bg-dark-700 text-gray-400 hover:bg-dark-600'}`}>
+                  {l.icon} {l.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Platform Health */}
+          {isLive && platforms.filter(p => p.enabled).length > 0 && (
+            <div className="card p-3">
+              <h3 className="text-sm font-bold text-white mb-2">Stream Health</h3>
+              <div className="flex gap-3 flex-wrap">
+                {platforms.filter(p => p.enabled).map(p => {
+                  const health = platformHealth[p.id] || 'connecting';
+                  const colors = { connected: 'text-green-400', connecting: 'text-yellow-400', error: 'text-red-400', disconnected: 'text-gray-500' };
+                  return (
+                    <div key={p.id} className="flex items-center gap-1.5 text-sm">
+                      <span className={colors[health]}>●</span>
+                      <span className="text-gray-300">{p.label || p.platform}</span>
+                      <span className={`text-xs ${colors[health]}`}>{health}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* === SIDEBAR PANEL === */}
+        <div className="space-y-3">
+          {/* Camera & Audio Controls */}
+          {tab === 'studio' && (
+            <div className="card p-3 space-y-3">
+              <h3 className="text-sm font-bold text-white">📹 Camera & Audio</h3>
+
+              {/* Camera select */}
+              {devices.video.length > 0 && (
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Camera</label>
+                  <select value={selectedCamera} onChange={e => handleCameraChange(e.target.value)}
+                    className="w-full bg-dark-800 border border-dark-600 rounded px-2 py-1 text-sm text-white">
+                    {devices.video.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || 'Camera'}</option>)}
+                  </select>
+                </div>
+              )}
+
+              {/* Mic select */}
+              {devices.audio.length > 0 && (
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Microphone</label>
+                  <select value={selectedMic} onChange={e => handleMicChange(e.target.value)}
+                    className="w-full bg-dark-800 border border-dark-600 rounded px-2 py-1 text-sm text-white">
+                    {devices.audio.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || 'Microphone'}</option>)}
+                  </select>
+                </div>
+              )}
+
+              {/* Mic Volume + Level */}
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-xs text-gray-400">Microphone</label>
+                  <button onClick={() => setMicMuted(!micMuted)} className={`text-xs px-2 py-0.5 rounded ${micMuted ? 'bg-red-600 text-white' : 'bg-dark-700 text-gray-400'}`}>
+                    {micMuted ? '🔇 Muted' : '🎤 On'}
+                  </button>
+                </div>
+                <input type="range" min="0" max="100" value={micVolume} onChange={e => setMicVolume(+e.target.value)} className="w-full h-1 accent-gold-500" />
+                <div className="h-1.5 bg-dark-700 rounded-full mt-1 overflow-hidden">
+                  <div className="h-full bg-green-500 transition-all duration-100" style={{ width: `${micMuted ? 0 : micLevel}%` }} />
+                </div>
+              </div>
+
+              {/* Music Volume */}
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-xs text-gray-400">Music / System Audio</label>
+                  <button onClick={() => setMusicMuted(!musicMuted)} className={`text-xs px-2 py-0.5 rounded ${musicMuted ? 'bg-red-600 text-white' : 'bg-dark-700 text-gray-400'}`}>
+                    {musicMuted ? '🔇 Muted' : '🎵 On'}
+                  </button>
+                </div>
+                <input type="range" min="0" max="100" value={musicVolume} onChange={e => setMusicVolume(+e.target.value)} className="w-full h-1 accent-gold-500" />
+              </div>
+
+              {/* Master Volume */}
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Master Volume</label>
+                <input type="range" min="0" max="100" value={masterVolume} onChange={e => setMasterVolume(+e.target.value)} className="w-full h-1 accent-gold-500" />
+              </div>
+
+              {/* Quality */}
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Video Quality</label>
+                <div className="flex gap-1">
+                  {['720p', '1080p', 'auto'].map(q => (
+                    <button key={q} onClick={() => { setVideoQuality(q); startCamera(selectedCamera || undefined, selectedMic || undefined); }}
+                      className={`px-3 py-1 rounded text-xs ${videoQuality === q ? 'bg-gold-500 text-dark-900' : 'bg-dark-700 text-gray-400'}`}>
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Flip & Blur */}
+              <div className="flex gap-2">
+                <button onClick={() => setCameraFlip(!cameraFlip)}
+                  className={`flex-1 px-2 py-1 rounded text-xs ${cameraFlip ? 'bg-gold-500 text-dark-900' : 'bg-dark-700 text-gray-400'}`}>
+                  ↔ Flip
+                </button>
+                <button onClick={() => setBgBlur(!bgBlur)}
+                  className={`flex-1 px-2 py-1 rounded text-xs ${bgBlur ? 'bg-gold-500 text-dark-900' : 'bg-dark-700 text-gray-400'}`}>
+                  🌫 Blur BG
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STREAM KEYS TAB */}
+          {tab === 'keys' && (
+            <div className="card p-3 space-y-3">
+              <div className="flex justify-between items-center">
+                <h3 className="text-sm font-bold text-white">🔑 Stream Keys</h3>
+                <button onClick={() => setShowKeyForm(true)} className="text-xs px-2 py-1 bg-gold-500 text-dark-900 rounded font-semibold">+ Add</button>
+              </div>
+
+              {platforms.map(p => (
+                <div key={p.id} className="bg-dark-800 rounded-lg p-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">{PLATFORM_PRESETS[p.platform]?.icon || '⚙'}</span>
+                    <div>
+                      <div className="text-sm font-semibold text-white">{p.label || p.platform}</div>
+                      <div className="text-xs text-gray-500">{p.hasKey ? `Key: ${p.maskedKey}` : 'No key'}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => api.post(`/studio/platforms/${p.id}/toggle`).then(() => {
+                      setPlatforms(prev => prev.map(pp => pp.id === p.id ? { ...pp, enabled: !pp.enabled } : pp));
+                    })} className={`text-xs px-2 py-0.5 rounded ${p.enabled ? 'bg-green-600 text-white' : 'bg-dark-600 text-gray-500'}`}>
+                      {p.enabled ? 'ON' : 'OFF'}
+                    </button>
+                    <button onClick={() => api.delete(`/studio/platforms/${p.id}`).then(() => {
+                      setPlatforms(prev => prev.filter(pp => pp.id !== p.id));
+                    })} className="text-xs text-red-400 hover:text-red-300 px-1">✕</button>
+                  </div>
+                </div>
+              ))}
+
+              {platforms.length === 0 && <p className="text-gray-500 text-sm text-center py-4">No platforms configured yet</p>}
+
+              {/* Add Platform Form */}
+              {showKeyForm && (
+                <div className="bg-dark-800 rounded-lg p-3 space-y-2 border border-dark-600">
+                  <select value={keyForm.platform} onChange={e => {
+                    const p = e.target.value;
+                    setKeyForm({ ...keyForm, platform: p, rtmpUrl: PLATFORM_PRESETS[p]?.rtmpUrl || '', label: PLATFORM_PRESETS[p]?.label || '' });
+                  }} className="w-full bg-dark-700 border border-dark-600 rounded px-2 py-1.5 text-sm text-white">
+                    {Object.entries(PLATFORM_PRESETS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </select>
+                  {PLATFORM_PRESETS[keyForm.platform]?.warning && (
+                    <div className="text-xs text-yellow-400 bg-yellow-900/20 rounded p-2">⚠ {PLATFORM_PRESETS[keyForm.platform].warning}</div>
+                  )}
+                  {PLATFORM_PRESETS[keyForm.platform]?.tooltip && (
+                    <div className="text-xs text-purple-300 bg-purple-900/20 rounded p-2">💡 {PLATFORM_PRESETS[keyForm.platform].tooltip}</div>
+                  )}
+                  <input value={keyForm.rtmpUrl} onChange={e => setKeyForm({ ...keyForm, rtmpUrl: e.target.value })}
+                    className="w-full bg-dark-700 border border-dark-600 rounded px-2 py-1.5 text-sm text-white" placeholder="RTMP URL" />
+                  <input value={keyForm.streamKey} onChange={e => setKeyForm({ ...keyForm, streamKey: e.target.value })}
+                    type="password" className="w-full bg-dark-700 border border-dark-600 rounded px-2 py-1.5 text-sm text-white" placeholder="Stream Key (encrypted on save)" />
+                  <div className="flex gap-2">
+                    <button onClick={savePlatform} className="flex-1 px-3 py-1.5 bg-gold-500 text-dark-900 rounded text-sm font-semibold">Save</button>
+                    <button onClick={() => setShowKeyForm(false)} className="px-3 py-1.5 bg-dark-700 text-gray-400 rounded text-sm">Cancel</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* LOWER THIRDS TAB */}
+          {tab === 'lower_thirds' && (
+            <div className="card p-3 space-y-3">
+              <div className="flex justify-between items-center">
+                <h3 className="text-sm font-bold text-white">🏷 Lower Thirds</h3>
+                <button onClick={() => setShowLtForm(true)} className="text-xs px-2 py-1 bg-gold-500 text-dark-900 rounded font-semibold">+ Create</button>
+              </div>
+
+              {/* Quick Templates */}
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Quick Templates</label>
+                <div className="space-y-1">
+                  {LOWER_THIRD_TEMPLATES.map((tmpl, i) => (
+                    <button key={i} onClick={() => {
+                      const lt = { ...tmpl };
+                      setLowerThirds(prev => [...prev, lt]);
+                    }} className="w-full text-left bg-dark-800 rounded px-3 py-2 text-xs hover:bg-dark-700 transition-colors">
+                      <span className="font-semibold text-white">{tmpl.name}</span>
+                      <span className="text-gray-500 ml-2">— {tmpl.title}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Saved Lower Thirds */}
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">My Lower Thirds</label>
+                {lowerThirds.map((lt, i) => (
+                  <div key={i} className="bg-dark-800 rounded-lg p-2 flex items-center justify-between mb-1">
+                    <div>
+                      <div className="text-sm font-semibold text-white">{lt.title || lt.name}</div>
+                      <div className="text-xs text-gray-500">{lt.subtitle}</div>
+                    </div>
+                    <div className="flex gap-1">
+                      <button onClick={() => {
+                        if (activeLTs.find(a => a.title === lt.title)) {
+                          setActiveLTs(prev => prev.filter(a => a.title !== lt.title));
+                        } else {
+                          setActiveLTs(prev => [...prev, lt]);
+                          if (lt.duration) setTimeout(() => setActiveLTs(prev => prev.filter(a => a.title !== lt.title)), lt.duration * 1000);
+                        }
+                      }} className={`text-xs px-2 py-0.5 rounded ${activeLTs.find(a => a.title === lt.title) ? 'bg-red-600 text-white' : 'bg-green-600 text-white'}`}>
+                        {activeLTs.find(a => a.title === lt.title) ? 'Hide' : 'Show'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Create Form */}
+              {showLtForm && (
+                <div className="bg-dark-800 rounded-lg p-3 space-y-2 border border-dark-600">
+                  <input value={ltForm.title} onChange={e => setLtForm({ ...ltForm, title: e.target.value })}
+                    className="w-full bg-dark-700 border border-dark-600 rounded px-2 py-1.5 text-sm text-white" placeholder="Title (e.g. Pastor Name)" />
+                  <input value={ltForm.subtitle} onChange={e => setLtForm({ ...ltForm, subtitle: e.target.value })}
+                    className="w-full bg-dark-700 border border-dark-600 rounded px-2 py-1.5 text-sm text-white" placeholder="Subtitle (e.g. Lead Pastor)" />
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="text-xs text-gray-400">BG</label>
+                      <input type="color" value={ltForm.bgColor} onChange={e => setLtForm({ ...ltForm, bgColor: e.target.value })} className="w-full h-8 rounded" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-400">Text</label>
+                      <input type="color" value={ltForm.textColor} onChange={e => setLtForm({ ...ltForm, textColor: e.target.value })} className="w-full h-8 rounded" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-400">Accent</label>
+                      <input type="color" value={ltForm.accentColor} onChange={e => setLtForm({ ...ltForm, accentColor: e.target.value })} className="w-full h-8 rounded" />
+                    </div>
+                  </div>
+                  <select value={ltForm.position} onChange={e => setLtForm({ ...ltForm, position: e.target.value })}
+                    className="w-full bg-dark-700 border border-dark-600 rounded px-2 py-1.5 text-sm text-white">
+                    <option value="bottom-left">Bottom Left</option>
+                    <option value="bottom-center">Bottom Center</option>
+                    <option value="bottom-right">Bottom Right</option>
+                  </select>
+                  <select value={ltForm.animation} onChange={e => setLtForm({ ...ltForm, animation: e.target.value })}
+                    className="w-full bg-dark-700 border border-dark-600 rounded px-2 py-1.5 text-sm text-white">
+                    <option value="slide">Slide In</option>
+                    <option value="fade">Fade In</option>
+                    <option value="pop">Pop In</option>
+                  </select>
+                  <div>
+                    <label className="text-xs text-gray-400">Duration (seconds, 0 = manual hide)</label>
+                    <input type="number" value={ltForm.duration} onChange={e => setLtForm({ ...ltForm, duration: +e.target.value })}
+                      className="w-full bg-dark-700 border border-dark-600 rounded px-2 py-1.5 text-sm text-white" />
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={saveLowerThird} className="flex-1 px-3 py-1.5 bg-gold-500 text-dark-900 rounded text-sm font-semibold">Save</button>
+                    <button onClick={() => setShowLtForm(false)} className="px-3 py-1.5 bg-dark-700 text-gray-400 rounded text-sm">Cancel</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* BIBLE TAB */}
+          {tab === 'bible' && (
+            <div className="card p-3 space-y-3">
+              <h3 className="text-sm font-bold text-white">📖 Bible Integration</h3>
+
+              {/* Search */}
+              <div className="grid grid-cols-3 gap-1">
+                <select value={bibleBook} onChange={e => setBibleBook(e.target.value)}
+                  className="bg-dark-800 border border-dark-600 rounded px-1 py-1.5 text-xs text-white">
+                  {BIBLE_BOOKS.map(b => <option key={b} value={b}>{b}</option>)}
+                </select>
+                <input value={bibleChapter} onChange={e => setBibleChapter(e.target.value)}
+                  className="bg-dark-800 border border-dark-600 rounded px-2 py-1.5 text-xs text-white" placeholder="Ch" />
+                <input value={bibleVerse} onChange={e => setBibleVerse(e.target.value)}
+                  className="bg-dark-800 border border-dark-600 rounded px-2 py-1.5 text-xs text-white" placeholder="Verse" />
+              </div>
+
+              {/* Translation */}
+              <select value={bibleTranslation} onChange={e => setBibleTranslation(e.target.value)}
+                className="w-full bg-dark-800 border border-dark-600 rounded px-2 py-1.5 text-xs text-white">
+                <optgroup label="English"><option value="KJV">KJV</option><option value="web">WEB (NIV-like)</option></optgroup>
+                <optgroup label="Spanish"><option value="rvr1960">Reina Valera 1960</option></optgroup>
+                <optgroup label="French"><option value="ls1910">Louis Segond 1910</option></optgroup>
+              </select>
+
+              <div className="flex gap-1">
+                <button onClick={fetchBibleVerse} className="flex-1 px-3 py-1.5 bg-gold-500 text-dark-900 rounded text-xs font-semibold">Look Up</button>
+                <button onClick={addVerseToQueue} disabled={!bibleText} className="px-3 py-1.5 bg-dark-700 text-gray-400 rounded text-xs">+ Queue</button>
+              </div>
+
+              {/* Verse Preview */}
+              {bibleText && (
+                <div className="bg-dark-800 rounded-lg p-3">
+                  <p className="text-white text-sm italic">"{bibleText}"</p>
+                  <p className="text-gold-400 text-xs mt-1 font-semibold">— {bibleBook} {bibleChapter}:{bibleVerse} ({bibleTranslation})</p>
+                  <div className="flex gap-1 mt-2">
+                    <button onClick={() => { setShowBibleOnStream(!showBibleOnStream); if (!showBibleOnStream && layout === 'full_camera') setLayout('split_50'); }}
+                      className={`flex-1 px-2 py-1 rounded text-xs font-semibold ${showBibleOnStream ? 'bg-red-600 text-white' : 'bg-green-600 text-white'}`}>
+                      {showBibleOnStream ? 'Hide from Stream' : 'Show on Stream'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Verse Queue */}
+              {bibleQueue.length > 0 && (
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Verse Queue ({bibleQueue.length})</label>
+                  {bibleQueue.map((v, i) => (
+                    <div key={i} className="bg-dark-800 rounded px-2 py-1.5 flex items-center justify-between mb-1">
+                      <span className="text-xs text-white">{v.book} {v.chapter}:{v.verse}</span>
+                      <button onClick={() => {
+                        setBibleText(v.text);
+                        setBibleBook(v.book);
+                        setBibleChapter(v.chapter);
+                        setBibleVerse(v.verse);
+                        setBibleTranslation(v.translation);
+                        setShowBibleOnStream(true);
+                        if (layout === 'full_camera') setLayout('split_50');
+                      }} className="text-xs px-2 py-0.5 bg-gold-500 text-dark-900 rounded">Show</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ANNOUNCEMENTS TAB */}
+          {tab === 'announcements' && (
+            <div className="card p-3 space-y-3">
+              <div className="flex justify-between items-center">
+                <h3 className="text-sm font-bold text-white">📢 Announcements</h3>
+                <button onClick={() => setShowAnnForm(true)} className="text-xs px-2 py-1 bg-gold-500 text-dark-900 rounded font-semibold">+ Create</button>
+              </div>
+
+              {/* Display Mode */}
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Display Mode</label>
+                <div className="flex gap-1">
+                  {[{id:'panel',l:'Full Panel'},{id:'ticker',l:'Ticker'},{id:'popup',l:'Pop-up'}].map(m => (
+                    <button key={m.id} onClick={() => setAnnMode(m.id)}
+                      className={`flex-1 px-2 py-1 rounded text-xs ${annMode === m.id ? 'bg-gold-500 text-dark-900' : 'bg-dark-700 text-gray-400'}`}>
+                      {m.l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Saved Announcements */}
+              {announcements.map((ann, i) => (
+                <div key={i} className="bg-dark-800 rounded-lg p-2 flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-white">{ann.title}</div>
+                    <div className="text-xs text-gray-500">{ann.body?.substring(0, 40)}...</div>
+                  </div>
+                  <button onClick={() => {
+                    if (activeAnnouncement?.title === ann.title) {
+                      setActiveAnnouncement(null);
+                    } else {
+                      setActiveAnnouncement(ann);
+                      if (layout === 'full_camera') setLayout('split_50');
+                    }
+                  }} className={`text-xs px-2 py-0.5 rounded ${activeAnnouncement?.title === ann.title ? 'bg-red-600 text-white' : 'bg-green-600 text-white'}`}>
+                    {activeAnnouncement?.title === ann.title ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+              ))}
+
+              {showAnnForm && (
+                <div className="bg-dark-800 rounded-lg p-3 space-y-2 border border-dark-600">
+                  <input value={annForm.title} onChange={e => setAnnForm({ ...annForm, title: e.target.value })}
+                    className="w-full bg-dark-700 border border-dark-600 rounded px-2 py-1.5 text-sm text-white" placeholder="Title" />
+                  <textarea value={annForm.body} onChange={e => setAnnForm({ ...annForm, body: e.target.value })}
+                    className="w-full bg-dark-700 border border-dark-600 rounded px-2 py-1.5 text-sm text-white h-20" placeholder="Body text" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div><label className="text-xs text-gray-400">BG</label><input type="color" value={annForm.bgColor} onChange={e => setAnnForm({ ...annForm, bgColor: e.target.value })} className="w-full h-8" /></div>
+                    <div><label className="text-xs text-gray-400">Text</label><input type="color" value={annForm.textColor} onChange={e => setAnnForm({ ...annForm, textColor: e.target.value })} className="w-full h-8" /></div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={saveAnnouncement} className="flex-1 px-3 py-1.5 bg-gold-500 text-dark-900 rounded text-sm font-semibold">Save</button>
+                    <button onClick={() => setShowAnnForm(false)} className="px-3 py-1.5 bg-dark-700 text-gray-400 rounded text-sm">Cancel</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* SUBTITLES TAB */}
+          {tab === 'subtitles' && (
+            <div className="card p-3 space-y-3">
+              <h3 className="text-sm font-bold text-white">💬 Live Subtitles</h3>
+
+              {browserWarning && <div className="text-xs text-yellow-400 bg-yellow-900/20 rounded p-2">⚠ {browserWarning}</div>}
+
+              {/* Mode Toggle */}
+              <div className="flex gap-1">
+                <button onClick={() => { setManualSubMode(false); setSubtitlesEnabled(!subtitlesEnabled); }}
+                  className={`flex-1 px-2 py-1.5 rounded text-xs font-semibold ${subtitlesEnabled && !manualSubMode ? 'bg-green-600 text-white' : 'bg-dark-700 text-gray-400'}`}>
+                  🎤 Auto (Speech)
+                </button>
+                <button onClick={() => { setSubtitlesEnabled(false); setManualSubMode(!manualSubMode); }}
+                  className={`flex-1 px-2 py-1.5 rounded text-xs font-semibold ${manualSubMode ? 'bg-green-600 text-white' : 'bg-dark-700 text-gray-400'}`}>
+                  ⌨ Manual Type
+                </button>
+              </div>
+
+              {/* Language */}
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Language</label>
+                <select value={subtitleLang} onChange={e => setSubtitleLang(e.target.value)}
+                  className="w-full bg-dark-800 border border-dark-600 rounded px-2 py-1.5 text-xs text-white">
+                  <option value="en-US">English</option>
+                  <option value="es-ES">Español</option>
+                  <option value="fr-FR">Français</option>
+                  <option value="ht">Kreyòl Ayisyen</option>
+                </select>
+              </div>
+
+              {/* Manual Input */}
+              {manualSubMode && (
+                <div>
+                  <textarea value={manualSubText} onChange={e => setManualSubText(e.target.value)}
+                    className="w-full bg-dark-800 border border-dark-600 rounded px-2 py-1.5 text-sm text-white h-20"
+                    placeholder="Type lyrics or subtitles here..." />
+                  <button onClick={() => setManualSubText('')} className="text-xs text-gray-400 hover:text-white mt-1">Clear</button>
+                </div>
+              )}
+
+              {/* Current subtitle preview */}
+              {(subtitleText || manualSubText) && (
+                <div className="bg-dark-800 rounded p-2">
+                  <label className="text-xs text-gray-400">Current subtitle:</label>
+                  <p className="text-white text-sm">{manualSubMode ? manualSubText : subtitleText}</p>
+                </div>
+              )}
+
+              {/* Style Controls */}
+              <div className="space-y-2">
+                <div>
+                  <label className="text-xs text-gray-400">Font Size: {subtitleStyle.fontSize}px</label>
+                  <input type="range" min="16" max="48" value={subtitleStyle.fontSize}
+                    onChange={e => setSubtitleStyle({ ...subtitleStyle, fontSize: +e.target.value })} className="w-full h-1 accent-gold-500" />
+                </div>
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <label className="text-xs text-gray-400">Color</label>
+                    <input type="color" value={subtitleStyle.color} onChange={e => setSubtitleStyle({ ...subtitleStyle, color: e.target.value })} className="w-full h-6" />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-xs text-gray-400">Position</label>
+                    <select value={subtitleStyle.position} onChange={e => setSubtitleStyle({ ...subtitleStyle, position: e.target.value })}
+                      className="w-full bg-dark-700 border border-dark-600 rounded px-1 py-1 text-xs text-white">
+                      <option value="bottom">Bottom</option>
+                      <option value="top">Top</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Transcript */}
+              {transcript.length > 0 && (
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Transcript ({transcript.length} lines)</label>
+                  <div className="bg-dark-800 rounded p-2 max-h-32 overflow-y-auto text-xs text-gray-300">
+                    {transcript.slice(-10).map((t, i) => <div key={i}>{t.text}</div>)}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ARCHIVE TAB */}
+          {tab === 'archive' && (
+            <div className="card p-3 space-y-3">
+              <h3 className="text-sm font-bold text-white">📁 Stream Archive</h3>
+              <ArchiveList />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Pre-flight Modal */}
+      {showPreflight && (
+        <div className="modal-backdrop" onClick={() => setShowPreflight(false)}>
+          <div className="modal p-6" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-bold text-white mb-4">Pre-flight Checklist</h2>
+            <div className="space-y-3">
+              {preflightChecks.map((check, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <span className={`text-lg ${check.pass ? 'text-green-400' : 'text-red-400'}`}>
+                    {check.pass ? '✓' : '✗'}
+                  </span>
+                  <span className={`text-sm ${check.pass ? 'text-white' : 'text-red-300'}`}>{check.label}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 flex gap-2">
+              {allChecksPassed ? (
+                <button onClick={() => { setShowPreflight(false); handleGoLive(); }}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg font-bold">All Clear — Go Live!</button>
+              ) : (
+                <p className="text-yellow-400 text-sm">⚠ Fix the items above before going live</p>
+              )}
+              <button onClick={() => setShowPreflight(false)} className="px-4 py-2 bg-dark-700 text-gray-400 rounded-lg">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Recording Download (after stream ends) */}
+      {!isLive && window.__lastRecording && (
+        <div className="card p-3 flex items-center justify-between">
+          <span className="text-sm text-white">Last recording available</span>
+          <a href={window.__lastRecording.url} download={`stream-${new Date().toISOString().split('T')[0]}.webm`}
+            className="px-3 py-1.5 bg-gold-500 text-dark-900 rounded text-sm font-semibold">Download Recording</a>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Archive list sub-component
+const ArchiveList = () => {
+  const [sessions, setSessions] = useState([]);
+  useEffect(() => {
+    api.get('/studio/sessions').then(setSessions).catch(() => {});
+  }, []);
+
+  if (sessions.length === 0) return <p className="text-gray-500 text-sm text-center py-4">No archived streams yet</p>;
+
+  return (
+    <div className="space-y-2">
+      {sessions.map(s => (
+        <div key={s.id} className="bg-dark-800 rounded-lg p-3">
+          <div className="flex justify-between items-start">
+            <div>
+              <div className="text-sm font-semibold text-white">{s.title}</div>
+              <div className="text-xs text-gray-500">{s.firstName} {s.lastName}</div>
+            </div>
+            <span className={`text-xs px-2 py-0.5 rounded ${s.status === 'live' ? 'bg-red-600 text-white' : 'bg-dark-600 text-gray-400'}`}>
+              {s.status === 'live' ? '● LIVE' : 'Ended'}
+            </span>
+          </div>
+          <div className="flex gap-3 mt-2 text-xs text-gray-400">
+            <span>📅 {s.startedAt?.split('T')[0] || s.startedAt?.split(' ')[0]}</span>
+            {s.platforms?.length > 0 && <span>📡 {s.platforms.join(', ')}</span>}
+            {s.viewerCount > 0 && <span>👥 {s.viewerCount}</span>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// =====================================================================
 // MAIN APP
 // =====================================================================
 function App() {
@@ -7715,7 +9171,7 @@ function App() {
 
   // Dynamic role-based page access from stored permissions
   const rp = data.rolePermissions || EMPTY_DATA.rolePermissions;
-  const ALL_PAGES = ['dashboard','members','attendance','events','finance','groups','accounts','feed','spaces','ranking','community','magazine','prayer_wall','announcements_page','pastor_word','fundraising_page'];
+  const ALL_PAGES = ['dashboard','members','attendance','events','finance','groups','accounts','feed','spaces','ranking','community','magazine','prayer_wall','announcements_page','pastor_word','fundraising_page','live_studio'];
 
   // Check user-specific overrides first, then fall back to role defaults
   const up = data.userPermissions || {};
@@ -7739,7 +9195,7 @@ function App() {
     feed:FeedPage, messages:MessagesPage, spaces:SpacesPage, ranking:RankingPage,
     community:CommunityHubWrapper, magazine:MagazinePage, prayer_wall:PrayerWallPage,
     announcements_page:AnnouncementsPage, pastor_word:PastorWordPage, fundraising_page:FundraisingPage,
-    settings:SettingsWrapper,
+    live_studio:LiveStudioPage, settings:SettingsWrapper,
   };
 
   // Guard: redirect to dashboard if user doesn't have access

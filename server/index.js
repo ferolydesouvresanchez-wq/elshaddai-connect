@@ -3,6 +3,7 @@ const cors = require('cors');
 const path = require('path');
 const { initDatabase } = require('./db/schema');
 const { initMemoryBank } = require('./helpers/memoryBank');
+const { initRelayServer, getRelayStatus } = require('./helpers/relay');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -22,6 +23,16 @@ try {
   memoryBankReport = initMemoryBank(db);
 } catch (e) {
   console.error('[MemoryBank] Initialization failed (non-fatal):', e.message);
+}
+
+// Initialize RTMP Relay Server (non-fatal — streaming still works without it)
+let relayServer = null;
+if (process.env.ENABLE_RTMP_RELAY !== 'false') {
+  try {
+    relayServer = initRelayServer(db);
+  } catch (e) {
+    console.error('[Relay] RTMP relay initialization failed (non-fatal):', e.message);
+  }
 }
 
 // Middleware
@@ -61,6 +72,7 @@ app.use('/api/users', require('./routes/users')(db));
 app.use('/api/community', require('./routes/community')(db));
 app.use('/api/messages', require('./routes/messages')(db));
 app.use('/api/settings', require('./routes/settings')(db));
+app.use('/api/studio', require('./routes/studio')(db));
 app.use('/api/memory-bank', require('./routes/memoryBank')(db));
 
 // Health check — includes Memory Bank verification
@@ -81,6 +93,8 @@ app.get('/api/health', (req, res) => {
     status: dbOk ? 'ok' : 'error',
     version: '2.0.0',
     memoryBank: 'active',
+    relay: relayServer ? 'active' : 'disabled',
+    relayStatus: relayServer ? getRelayStatus() : {},
     dbPath: db.name,
     volumePath: process.env.RAILWAY_VOLUME_MOUNT_PATH || '(not set)',
     dbOnVolume: process.env.RAILWAY_VOLUME_MOUNT_PATH
@@ -133,6 +147,9 @@ app.listen(PORT, () => {
 
 // Graceful shutdown
 process.on('SIGINT', () => {
+  if (relayServer) {
+    try { relayServer.stop(); } catch (e) { /* ignore */ }
+  }
   db.close();
   process.exit(0);
 });

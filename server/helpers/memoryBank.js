@@ -36,6 +36,7 @@ const MEMORY_BOOKS = {
   MEMORY_COURSES:        { tables: ['courses', 'lessons', 'lesson_progress'], label: 'Courses & Lessons' },
   MEMORY_AUTH:           { tables: ['users'], label: 'Authentication' },
   MEMORY_RANKING:        { tables: ['point_ledger', 'user_points', 'login_history'], label: 'Ranking & Points System' },
+  MEMORY_LIVESTREAM:     { tables: ['stream_platforms', 'studio_presets', 'stream_sessions', 'stream_archives', 'stream_chat', 'stream_reactions'], label: 'Live Streaming Studio' },
 };
 
 // Data directory for Memory Bank status files

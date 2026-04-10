@@ -496,6 +496,72 @@ function initDatabase() {
       UNIQUE(userId, loginDate)
     );
 
+    -- Live Studio: Stream Platforms (encrypted keys)
+    CREATE TABLE IF NOT EXISTS stream_platforms (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      platform TEXT NOT NULL,
+      rtmpUrl TEXT NOT NULL,
+      encryptedKey TEXT NOT NULL,
+      label TEXT,
+      enabled INTEGER DEFAULT 1,
+      createdAt TEXT DEFAULT (datetime('now')),
+      updatedAt TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Live Studio: Presets (lower thirds, announcements, verse queues)
+    CREATE TABLE IF NOT EXISTS studio_presets (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      type TEXT NOT NULL,
+      name TEXT NOT NULL,
+      config TEXT DEFAULT '{}',
+      createdAt TEXT DEFAULT (datetime('now')),
+      updatedAt TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Live Studio: Stream Sessions
+    CREATE TABLE IF NOT EXISTS stream_sessions (
+      id TEXT PRIMARY KEY,
+      hostId TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title TEXT NOT NULL DEFAULT 'Live Stream',
+      status TEXT DEFAULT 'live' CHECK(status IN ('live','ended')),
+      platforms TEXT DEFAULT '[]',
+      viewerCount INTEGER DEFAULT 0,
+      startedAt TEXT DEFAULT (datetime('now')),
+      endedAt TEXT
+    );
+
+    -- Live Studio: Stream Archives
+    CREATE TABLE IF NOT EXISTS stream_archives (
+      id TEXT PRIMARY KEY,
+      sessionId TEXT NOT NULL REFERENCES stream_sessions(id) ON DELETE CASCADE,
+      recordingUrl TEXT,
+      transcript TEXT,
+      versesUsed TEXT DEFAULT '[]',
+      duration INTEGER DEFAULT 0,
+      createdAt TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Live Studio: Stream Chat
+    CREATE TABLE IF NOT EXISTS stream_chat (
+      id TEXT PRIMARY KEY,
+      sessionId TEXT NOT NULL REFERENCES stream_sessions(id) ON DELETE CASCADE,
+      userId TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      text TEXT NOT NULL,
+      type TEXT DEFAULT 'message' CHECK(type IN ('message','prayer','reaction')),
+      createdAt TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Live Studio: Stream Reactions
+    CREATE TABLE IF NOT EXISTS stream_reactions (
+      id TEXT PRIMARY KEY,
+      sessionId TEXT NOT NULL REFERENCES stream_sessions(id) ON DELETE CASCADE,
+      userId TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      emoji TEXT NOT NULL DEFAULT '❤️',
+      createdAt TEXT DEFAULT (datetime('now'))
+    );
+
     -- Indexes for performance
     CREATE INDEX IF NOT EXISTS idx_attendance_member ON attendance(memberId);
     CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date);
@@ -528,6 +594,12 @@ function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_point_ledger_action ON point_ledger(userId, actionType, relatedEntityId);
     CREATE INDEX IF NOT EXISTS idx_point_ledger_created ON point_ledger(createdAt);
     CREATE INDEX IF NOT EXISTS idx_login_history_user ON login_history(userId, loginDate);
+    CREATE INDEX IF NOT EXISTS idx_stream_platforms_user ON stream_platforms(userId);
+    CREATE INDEX IF NOT EXISTS idx_studio_presets_user ON studio_presets(userId, type);
+    CREATE INDEX IF NOT EXISTS idx_stream_sessions_status ON stream_sessions(status);
+    CREATE INDEX IF NOT EXISTS idx_stream_sessions_host ON stream_sessions(hostId);
+    CREATE INDEX IF NOT EXISTS idx_stream_chat_session ON stream_chat(sessionId);
+    CREATE INDEX IF NOT EXISTS idx_stream_reactions_session ON stream_reactions(sessionId);
   `);
 
   // Migration: add status column if missing
