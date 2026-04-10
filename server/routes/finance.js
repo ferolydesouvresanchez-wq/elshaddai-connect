@@ -61,15 +61,26 @@ module.exports = function(db) {
       return res.status(400).json({ error: 'type, category, amount, date required' });
     }
 
-    const id = uuidv4();
-    db.prepare(`
-      INSERT INTO transactions (id, type, category, amount, description, memberId, date, paymentMethod, reference, createdBy)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, type, category, amount, description || null, memberId || null,
-           date, paymentMethod || null, reference || null, req.user.id);
+    try {
+      const id = uuidv4();
+      db.prepare(`
+        INSERT INTO transactions (id, type, category, amount, description, memberId, date, paymentMethod, reference, createdBy)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, type, category, amount, description || null, memberId || null,
+             date, paymentMethod || null, reference || null, req.user.id);
 
-    const transaction = db.prepare('SELECT * FROM transactions WHERE id = ?').get(id);
-    res.status(201).json(transaction);
+      const transaction = db.prepare('SELECT * FROM transactions WHERE id = ?').get(id);
+      res.status(201).json(transaction);
+    } catch (err) {
+      console.error('Finance create error:', err.message);
+      if (err.message.includes('CHECK constraint')) {
+        return res.status(400).json({ error: 'Invalid type. Must be income or expense.' });
+      }
+      if (err.message.includes('FOREIGN KEY')) {
+        return res.status(400).json({ error: 'Invalid member ID.' });
+      }
+      res.status(500).json({ error: 'Failed to create transaction' });
+    }
   });
 
   // PUT /api/finance/:id

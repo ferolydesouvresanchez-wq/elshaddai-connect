@@ -2319,21 +2319,26 @@ const AdminDashboard = ({ data, updateData, t, currentUser }) => {
   const now = new Date();
   const monthStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
 
-  const totalMembers = data.members.filter(m=>m.status==='active').length;
-  const monthFinance = data.finance.filter(f=>f.date.startsWith(monthStr));
-  const monthIncome = monthFinance.filter(f=>f.type!=='expense').reduce((s,f)=>s+Number(f.amount),0);
-  const upcomingEvents = data.events.filter(e=>e.date>=today).length;
+  const members = data.members || [];
+  const finance = data.finance || [];
+  const events = data.events || [];
+  const attendance = data.attendance || [];
 
-  const thisMonthAttendance = data.attendance.filter(a=>a.date.startsWith(monthStr));
+  const totalMembers = members.filter(m=>m.status==='active').length;
+  const monthFinance = finance.filter(f=>f.date && f.date.startsWith(monthStr));
+  const monthIncome = monthFinance.filter(f=>f.type!=='expense').reduce((s,f)=>s+Number(f.amount),0);
+  const upcomingEvents = events.filter(e=>e.date>=today).length;
+
+  const thisMonthAttendance = attendance.filter(a=>a.date && a.date.startsWith(monthStr));
   const avgAttendance = thisMonthAttendance.length>0
-    ? Math.round(thisMonthAttendance.reduce((s,a)=>s+a.attendeeIds.length,0)/thisMonthAttendance.length) : 0;
+    ? Math.round(thisMonthAttendance.reduce((s,a)=>s+(a.attendeeIds||[]).length,0)/thisMonthAttendance.length) : 0;
   const attendRate = totalMembers > 0 ? Math.round((avgAttendance/totalMembers)*100) : 0;
 
-  const recentMembers = [...data.members].sort((a,b)=>new Date(b.joinDate)-new Date(a.joinDate)).slice(0,5);
-  const recentTransactions = [...data.finance].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,5);
+  const recentMembers = [...members].sort((a,b)=>new Date(b.joinDate)-new Date(a.joinDate)).slice(0,5);
+  const recentTransactions = [...finance].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,5);
 
   const statCards = [
-    { label:t.dash.totalMembers, value:totalMembers, icon:'users', gradient:'from-gold-700 to-gold-500', subtitle:`${data.members.length} ${t.common.total}` },
+    { label:t.dash.totalMembers, value:totalMembers, icon:'users', gradient:'from-gold-700 to-gold-500', subtitle:`${members.length} ${t.common.total}` },
     { label:t.dash.monthAttend, value:`${attendRate}%`, icon:'attendance', gradient:'from-green-800 to-green-600', subtitle:`~${avgAttendance} ${t.common.of} ${totalMembers}` },
     { label:t.dash.monthIncome, value:formatCurrency(monthIncome), icon:'wallet', gradient:'from-purple-800 to-purple-600', subtitle:t.dash.thisMonth },
     { label:t.dash.upcomingEvents, value:upcomingEvents, icon:'calendar', gradient:'from-amber-800 to-amber-600', subtitle:t.dash.thisMonth },
@@ -2389,7 +2394,7 @@ const AdminDashboard = ({ data, updateData, t, currentUser }) => {
             ? <EmptyState icon="wallet" message={t.common.noData}/>
             : <div className="space-y-3">
                 {recentTransactions.map(f=>{
-                  const member = data.members.find(m=>m.id===f.memberId);
+                  const member = (data.members||[]).find(m=>m.id===f.memberId);
                   const isExpense = f.type==='expense';
                   return (
                     <div key={f.id} className="flex items-center gap-3">
@@ -2413,11 +2418,11 @@ const AdminDashboard = ({ data, updateData, t, currentUser }) => {
 
       <BirthdaySection data={data} t={t}/>
 
-      {data.groups.length > 0 && (
+      {(data.groups||[]).length > 0 && (
         <div className="card p-5">
           <h3 className="font-bold text-gold-400 mb-4">{t.nav.groups}</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {data.groups.map((g,i)=>{
+            {(data.groups||[]).map((g,i)=>{
               const colors = ['from-gold-700 to-gold-500','from-purple-800 to-purple-600','from-green-800 to-green-600','from-amber-800 to-amber-600'];
               return (
                 <div key={g.id} className={`bg-gradient-to-br ${colors[i%4]} rounded-xl p-4 text-white`}>
@@ -2425,7 +2430,7 @@ const AdminDashboard = ({ data, updateData, t, currentUser }) => {
                   <div className="text-white/70 text-xs">{g.leader || t.groups.noLeader}</div>
                   <div className="mt-3 flex items-center gap-1">
                     <Icon name="users" size={14}/>
-                    <span className="text-sm font-bold">{g.memberIds.length} {t.groups.membersIn}</span>
+                    <span className="text-sm font-bold">{(g.memberIds||[]).length} {t.groups.membersIn}</span>
                   </div>
                 </div>
               );
@@ -2444,18 +2449,21 @@ const CHURCH_SOCIALS = {
 };
 
 const MemberDashboard = ({ data, updateData, t, currentUser }) => {
-  const myMember = data.members.find(m => m.userId === currentUser?.id);
-  const myGroups = data.groups.filter(g => g.memberIds?.includes(myMember?.id) || g.memberIds?.includes(currentUser?.id));
-  const myRsvpEvents = data.events.filter(e => e.myRsvp);
+  const mbrs = data.members || [];
+  const evts = data.events || [];
+  const grps = data.groups || [];
+  const myMember = mbrs.find(m => m.userId === currentUser?.id);
+  const myGroups = grps.filter(g => g.memberIds?.includes(myMember?.id) || g.memberIds?.includes(currentUser?.id));
+  const myRsvpEvents = evts.filter(e => e.myRsvp);
   const pastEvents = myRsvpEvents.filter(e => e.date < today).slice(-5);
-  const upcomingEvents = data.events.filter(e => e.date >= today).slice(0, 5);
+  const upcomingEvents = evts.filter(e => e.date >= today).slice(0, 5);
   const followingIds = (data.follows||[]).filter(f => f.followerId === currentUser?.id && f.status === 'accepted').map(f => f.followingId);
   const feedPosts = (data.posts||[]).filter(p => followingIds.includes(p.userId) || p.userId === currentUser?.id)
     .sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5);
-  const recentMembers = [...data.members].sort((a,b) => new Date(b.joinDate) - new Date(a.joinDate)).slice(0, 8);
+  const recentMembers = [...mbrs].sort((a,b) => new Date(b.joinDate) - new Date(a.joinDate)).slice(0, 8);
   const [eventDetail, setEventDetail] = useState(null);
   const [rsvpMsg, setRsvpMsg] = useState('');
-  const myRsvps = data.events.filter(e => e.myRsvp).map(e => ({ eventId: e.id, attending: true }));
+  const myRsvps = evts.filter(e => e.myRsvp).map(e => ({ eventId: e.id, attending: true }));
 
   const handleRsvp = async () => {
     if (!eventDetail) return;
@@ -2711,7 +2719,7 @@ const Members = ({ data, updateData, t }) => {
   };
 
   const filtered = useMemo(() => {
-    return data.members.filter(m => {
+    return (data.members||[]).filter(m => {
       const matchSearch = search==='' || `${m.firstName} ${m.lastName} ${m.email} ${m.phone}`.toLowerCase().includes(search.toLowerCase());
       const matchStatus = statusFilter==='all' || m.status===statusFilter;
       return matchSearch && matchStatus;
@@ -2733,17 +2741,17 @@ const Members = ({ data, updateData, t }) => {
     if (modal==='add') {
       updateData('members', [...data.members, { ...form, id: Date.now(), groupId: form.groupId||null }]);
     } else {
-      updateData('members', data.members.map(m=>m.id===form.id?{...form, groupId:form.groupId||null}:m));
+      updateData('members', (data.members||[]).map(m=>m.id===form.id?{...form, groupId:form.groupId||null}:m));
     }
     setModal(null);
   };
 
   const handleDelete = (id) => {
-    updateData('members', data.members.filter(m=>m.id!==id));
+    updateData('members', (data.members||[]).filter(m=>m.id!==id));
     setConfirm(null);
   };
 
-  const groupOpts = [{ value:'', label:t.common.select },...data.groups.map(g=>({ value:g.id, label:g.name }))];
+  const groupOpts = [{ value:'', label:t.common.select },...(data.groups||[]).map(g=>({ value:g.id, label:g.name }))];
   const statusOpts = [
     { value:'all', label:t.common.all },
     { value:'active', label:t.members.active },
@@ -2794,7 +2802,7 @@ const Members = ({ data, updateData, t }) => {
                 </thead>
                 <tbody className="divide-y divide-dark-700">
                   {filtered.map(m=>{
-                    const group = data.groups.find(g=>g.id===m.groupId);
+                    const group = (data.groups||[]).find(g=>g.id===m.groupId);
                     const memberUser = (data.users||[]).find(u => u.id === m.userId);
                     return (
                       <tr key={m.id} className="table-row">
@@ -2875,7 +2883,7 @@ const Attendance = ({ data, updateData, t }) => {
     { value:'youth', label:t.attend.youth }, { value:'special', label:t.attend.special },
   ];
 
-  const activeMembers = data.members.filter(m=>m.status==='active');
+  const activeMembers = (data.members||[]).filter(m=>m.status==='active');
   const presentCount = Object.values(checked).filter(Boolean).length;
 
   const handleSave = async () => {
@@ -2902,7 +2910,7 @@ const Attendance = ({ data, updateData, t }) => {
   };
 
   useEffect(() => {
-    const existing = data.attendance.find(a=>a.date===selDate && a.serviceType===selService);
+    const existing = (data.attendance||[]).find(a=>a.date===selDate && a.serviceType===selService);
     if (existing) {
       const map = {};
       activeMembers.forEach(m=>{ map[m.id] = existing.attendeeIds.includes(m.id); });
@@ -2916,11 +2924,11 @@ const Attendance = ({ data, updateData, t }) => {
   const markAll = () => { const m={}; activeMembers.forEach(mb=>{m[mb.id]=true;}); setChecked(m); };
   const clearAll = () => setChecked({});
 
-  const history = [...data.attendance].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,8);
+  const history = [...(data.attendance||[])].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,8);
 
   const exportAttendCSV = () => {
     const headers = ['Date','Service Type','Total Members','Present','Absent','Rate (%)'];
-    const rows = data.attendance.map(a => {
+    const rows = (data.attendance||[]).map(a => {
       const total = activeMembers.length;
       const present = a.attendeeIds?.length||0;
       return [a.date, a.serviceType, total, present, total-present, total>0?Math.round((present/total)*100):0];
@@ -2964,7 +2972,7 @@ const Attendance = ({ data, updateData, t }) => {
           ? <EmptyState icon="users" message={t.common.noData}/>
           : <div className="divide-y divide-dark-700">
               {activeMembers.map(m=>{
-                const group = data.groups.find(g=>g.id===m.groupId);
+                const group = (data.groups||[]).find(g=>g.id===m.groupId);
                 return (
                   <div key={m.id} onClick={()=>toggle(m.id)}
                     className={`flex items-center gap-3 px-5 py-3 cursor-pointer transition-colors ${checked[m.id]?'bg-green-900/20':'hover:bg-dark-700'}`}>
@@ -3010,7 +3018,7 @@ const Attendance = ({ data, updateData, t }) => {
               <tbody className="divide-y divide-dark-700">
                 {history.map(a=>{
                   const svc = serviceTypes.find(s=>s.value===a.serviceType);
-                  const total = data.members.filter(m=>m.status==='active').length;
+                  const total = (data.members||[]).filter(m=>m.status==='active').length;
                   const rate = total>0?Math.round((a.attendeeIds.length/total)*100):0;
                   return (
                     <tr key={a.id}>
@@ -3085,8 +3093,8 @@ const Events = ({ data, updateData, t, currentUser }) => {
   const [actionMsg, setActionMsg] = useState('');
   const isAdmin = ['superadmin','admin'].includes(currentUser?.role);
 
-  const upcoming = data.events.filter(e=>e.date>=today).sort((a,b)=>a.date.localeCompare(b.date));
-  const past = data.events.filter(e=>e.date<today).sort((a,b)=>b.date.localeCompare(a.date));
+  const upcoming = (data.events||[]).filter(e=>e.date>=today).sort((a,b)=>a.date.localeCompare(b.date));
+  const past = (data.events||[]).filter(e=>e.date<today).sort((a,b)=>b.date.localeCompare(a.date));
   const shown = tab==='upcoming'?upcoming:past;
 
   const typeColors = { worship:'badge-blue', meeting:'badge-purple', outreach:'badge-green', special:'badge-yellow', youth:'badge-red', prayer:'badge-gray' };
@@ -3115,7 +3123,7 @@ const Events = ({ data, updateData, t, currentUser }) => {
         updateData('events', [...data.events, created]);
       } else {
         const updated = await api.put('/events/' + form.id, form);
-        updateData('events', data.events.map(e=>e.id===updated.id?updated:e));
+        updateData('events', (data.events||[]).map(e=>e.id===updated.id?updated:e));
       }
       setModal(null);
     } catch(err) { console.error('Save event error:', err); }
@@ -3374,7 +3382,7 @@ const Events = ({ data, updateData, t, currentUser }) => {
       </Modal>
 
       <ConfirmModal isOpen={!!confirm} message={t.events.confirmDelete}
-        onConfirm={async()=>{try{await api.del('/events/'+confirm);}catch(e){}updateData('events',data.events.filter(e=>e.id!==confirm));setConfirm(null);}}
+        onConfirm={async()=>{try{await api.del('/events/'+confirm);}catch(e){}updateData('events',(data.events||[]).filter(e=>e.id!==confirm));setConfirm(null);}}
         onCancel={()=>setConfirm(null)} t={t}/>
     </div>
   );
@@ -3393,7 +3401,7 @@ const Finance = ({ data, updateData, t }) => {
   const now = new Date();
   const monthStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
 
-  const periodFiltered = period==='month' ? data.finance.filter(f=>f.date.startsWith(monthStr)) : data.finance;
+  const periodFiltered = period==='month' ? (data.finance||[]).filter(f=>f.date.startsWith(monthStr)) : (data.finance||[]);
   const shown = filter==='all' ? periodFiltered : filter==='income' ? periodFiltered.filter(f=>f.type!=='expense') : periodFiltered.filter(f=>f.type==='expense');
   const sorted = [...shown].sort((a,b)=>new Date(b.date)-new Date(a.date));
 
@@ -3418,7 +3426,7 @@ const Finance = ({ data, updateData, t }) => {
     if (modal==='add') {
       updateData('finance', [...data.finance, tx]);
     } else {
-      updateData('finance', data.finance.map(f=>f.id===form.id?tx:f));
+      updateData('finance', (data.finance||[]).map(f=>f.id===form.id?tx:f));
     }
     setModal(null);
   };
@@ -3426,7 +3434,7 @@ const Finance = ({ data, updateData, t }) => {
   const exportFinanceCSV = () => {
     const headers = ['Date','Type','Category','Amount','Description','Member'];
     const rows = sorted.map(f => {
-      const mem = f.memberId ? data.members.find(m=>m.id===f.memberId) : null;
+      const mem = f.memberId ? (data.members||[]).find(m=>m.id===f.memberId) : null;
       return [f.date, f.type, typeLabel(f.type), f.amount, f.description||'', mem?`${mem.firstName} ${mem.lastName}`:''];
     });
     const csv = [headers,...rows].map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
@@ -3435,7 +3443,7 @@ const Finance = ({ data, updateData, t }) => {
   };
 
   const typeOpts = [{value:'tithe',label:t.finance.tithe},{value:'offering',label:t.finance.offering},{value:'donation',label:t.finance.donation},{value:'expense',label:t.finance.expense}];
-  const memberOpts = [{value:'',label:t.common.select},...data.members.map(m=>({value:m.id,label:`${m.firstName} ${m.lastName}`}))];
+  const memberOpts = [{value:'',label:t.common.select},...(data.members||[]).map(m=>({value:m.id,label:`${m.firstName} ${m.lastName}`}))];
 
   return (
     <div className="space-y-4 fade-in">
@@ -3490,7 +3498,7 @@ const Finance = ({ data, updateData, t }) => {
                 </thead>
                 <tbody className="divide-y divide-dark-700">
                   {sorted.map(f=>{
-                    const member = data.members.find(m=>m.id===f.memberId);
+                    const member = (data.members||[]).find(m=>m.id===f.memberId);
                     const isExpense = f.type==='expense';
                     return (
                       <tr key={f.id} className="table-row">
@@ -3529,7 +3537,7 @@ const Finance = ({ data, updateData, t }) => {
       </Modal>
 
       <ConfirmModal isOpen={!!confirm} message={t.finance.confirmDelete}
-        onConfirm={()=>{updateData('finance',data.finance.filter(f=>f.id!==confirm));setConfirm(null);}}
+        onConfirm={()=>{updateData('finance',(data.finance||[]).filter(f=>f.id!==confirm));setConfirm(null);}}
         onCancel={()=>setConfirm(null)} t={t}/>
     </div>
   );
@@ -3843,7 +3851,7 @@ const Groups = ({ data, updateData, t, currentUser }) => {
         updateData('groups', [...data.groups, { ...created, memberIds:form.memberIds||[] }]);
       } else {
         const updated = await api.put('/groups/' + form.id, { name: form.name, description: form.description, type: form.type, leaderId: form.leader || form.leaderId, meetingDay: form.meetingDay, meetingTime: form.meetingTime, active: form.active });
-        updateData('groups', data.groups.map(g=>g.id===updated.id?{...g,...updated}:g));
+        updateData('groups', (data.groups||[]).map(g=>g.id===updated.id?{...g,...updated}:g));
       }
       setModal(null);
     } catch(err) { console.error('Save group error:', err); }
@@ -3909,7 +3917,7 @@ const Groups = ({ data, updateData, t, currentUser }) => {
 
   // If viewing courses for a specific group
   if (selectedGroup) {
-    const group = data.groups.find(g => g.id === selectedGroup);
+    const group = (data.groups||[]).find(g => g.id === selectedGroup);
     if (!group) { setSelectedGroup(null); return null; }
     const groupCourses = (data.courses||[]).filter(c => c.grupo_id === selectedGroup);
     const visibleCourses = isMember ? groupCourses.filter(c => c.activo) : groupCourses;
@@ -4008,7 +4016,7 @@ const Groups = ({ data, updateData, t, currentUser }) => {
         ? <div className="card"><EmptyState icon="users" message={t.groups.noGroups}/></div>
         : <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {visibleGroups.map((g,i)=>{
-              const groupMembers = data.members.filter(m=>g.memberIds.includes(m.id));
+              const groupMembers = (data.members||[]).filter(m=>g.memberIds.includes(m.id));
               const courseCount = (data.courses||[]).filter(c=>c.grupo_id===g.id && c.activo).length;
               return (
                 <div key={g.id} className="card overflow-hidden hover:shadow-lg transition-shadow border border-dark-700">
@@ -4055,7 +4063,7 @@ const Groups = ({ data, updateData, t, currentUser }) => {
           <div>
             <label className="text-sm font-medium text-gold-400 block mb-2">{t.groups.assignMembers}</label>
             <div className="border border-dark-600 rounded-lg divide-y divide-dark-700 max-h-48 overflow-y-auto bg-dark-900">
-              {data.members.filter(m=>m.status==='active').map(m=>(
+              {(data.members||[]).filter(m=>m.status==='active').map(m=>(
                 <label key={m.id} className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-dark-700">
                   <input type="checkbox" checked={(form.memberIds||[]).includes(m.id)} onChange={()=>toggleMember(m.id)} className="rounded text-gold-500"/>
                   <div className="w-7 h-7 rounded-full bg-gradient-to-br from-gold-500 to-gold-700 flex items-center justify-center text-dark-900 text-xs font-bold">
@@ -4064,7 +4072,7 @@ const Groups = ({ data, updateData, t, currentUser }) => {
                   <span className="text-sm text-gray-300">{m.firstName} {m.lastName}</span>
                 </label>
               ))}
-              {data.members.filter(m=>m.status==='active').length===0 && (
+              {(data.members||[]).filter(m=>m.status==='active').length===0 && (
                 <div className="px-3 py-4 text-center text-sm text-gray-600">{t.common.noData}</div>
               )}
             </div>
@@ -4077,7 +4085,7 @@ const Groups = ({ data, updateData, t, currentUser }) => {
       </Modal>
 
       <ConfirmModal isOpen={!!confirm} message={t.groups.confirmDelete}
-        onConfirm={async()=>{try{await api.del('/groups/'+confirm);}catch(e){}updateData('groups',data.groups.filter(g=>g.id!==confirm));setConfirm(null);}}
+        onConfirm={async()=>{try{await api.del('/groups/'+confirm);}catch(e){}updateData('groups',(data.groups||[]).filter(g=>g.id!==confirm));setConfirm(null);}}
         onCancel={()=>setConfirm(null)} t={t}/>
     </div>
   );
@@ -6303,10 +6311,10 @@ const Accounts = ({ data, updateData, t, currentUser }) => {
                 </button>
               ))}
             </div>
-            {selectedRole === 'ministry_leader' && data.groups.length > 0 && (
+            {selectedRole === 'ministry_leader' && (data.groups||[]).length > 0 && (
               <div className="mb-4">
                 <Select label={t.groups.title} value={selectedGroup} onChange={e => setSelectedGroup(e.target.value)}
-                  options={[{ value: '', label: t.common.select }, ...data.groups.map(g => ({ value: String(g.id), label: g.name }))]} />
+                  options={[{ value: '', label: t.common.select }, ...(data.groups||[]).map(g => ({ value: String(g.id), label: g.name }))]} />
               </div>
             )}
             {selectedRole !== 'superadmin' && (
