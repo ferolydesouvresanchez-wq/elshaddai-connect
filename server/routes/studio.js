@@ -262,10 +262,10 @@ module.exports = function(db) {
   // GET /api/studio/relay-status — get RTMP relay status
   router.get('/relay-status', requireRole('superadmin', 'admin'), (req, res) => {
     try {
-      const { getRelayStatus } = require('../helpers/relay');
-      res.json({ active: true, relays: getRelayStatus() });
+      const relayMod = require('../helpers/relay');
+      res.json({ active: true, relays: relayMod.getRelayStatus() });
     } catch (e) {
-      res.json({ active: false, error: e.message });
+      res.json({ active: false, error: 'Relay module not available' });
     }
   });
 

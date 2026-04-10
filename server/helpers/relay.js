@@ -1,5 +1,3 @@
-const NodeMediaServer = require('node-media-server');
-const ffmpegPath = require('ffmpeg-static');
 const { spawn } = require('child_process');
 const { decrypt } = require('./encryption');
 
@@ -25,6 +23,9 @@ const activeRelays = new Map();
  * Accepts incoming RTMP streams and triggers multi-platform relay via FFmpeg
  */
 function initRelayServer(db) {
+  const NodeMediaServer = require('node-media-server');
+  const ffmpegPath = require('ffmpeg-static');
+
   const config = {
     logType: 1,
     rtmp: {
