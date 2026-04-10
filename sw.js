@@ -1,4 +1,4 @@
-const CACHE_NAME = 'elshaddai-v1';
+const CACHE_NAME = 'elshaddai-v7';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -54,7 +54,21 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets: Cache-first, fall back to network
+  // HTML pages: Network-first so updates are picked up immediately
+  if (request.mode === 'navigate' || url.pathname.endsWith('.html') || url.pathname === '/') {
+    event.respondWith(
+      fetch(request).then((response) => {
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+        }
+        return response;
+      }).catch(() => caches.match(request) || caches.match('/index.html'))
+    );
+    return;
+  }
+
+  // Other static assets: Cache-first, fall back to network
   event.respondWith(
     caches.match(request).then((cached) => {
       if (cached) return cached;
@@ -65,11 +79,6 @@ self.addEventListener('fetch', (event) => {
         }
         return response;
       });
-    }).catch(() => {
-      // Fallback for navigation requests
-      if (request.mode === 'navigate') {
-        return caches.match('/index.html');
-      }
-    })
+    }).catch(() => caches.match('/index.html'))
   );
 });
