@@ -3,13 +3,6 @@ const cors = require('cors');
 const path = require('path');
 const { initDatabase } = require('./db/schema');
 const { initMemoryBank } = require('./helpers/memoryBank');
-// Relay is lazy-loaded — node-media-server/ffmpeg-static may not be installed
-let relayModule = null;
-try {
-  relayModule = require('./helpers/relay');
-} catch (e) {
-  console.warn('[Relay] RTMP relay module not available (missing dependencies):', e.message);
-}
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -31,13 +24,15 @@ try {
   console.error('[MemoryBank] Initialization failed (non-fatal):', e.message);
 }
 
-// Initialize RTMP Relay Server (non-fatal — streaming still works without it)
+// RTMP Relay is optional — only loads when ENABLE_RTMP_RELAY=true and dependencies are installed
 let relayServer = null;
-if (relayModule && process.env.ENABLE_RTMP_RELAY !== 'false') {
+if (process.env.ENABLE_RTMP_RELAY === 'true') {
   try {
-    relayServer = relayModule.initRelayServer(db);
+    const { initRelayServer } = require('./helpers/relay');
+    relayServer = initRelayServer(db);
+    console.log('[Relay] RTMP relay server initialized');
   } catch (e) {
-    console.error('[Relay] RTMP relay initialization failed (non-fatal):', e.message);
+    console.warn('[Relay] RTMP relay not available:', e.message);
   }
 }
 
@@ -100,7 +95,6 @@ app.get('/api/health', (req, res) => {
     version: '2.0.0',
     memoryBank: 'active',
     relay: relayServer ? 'active' : 'disabled',
-    relayStatus: relayServer && relayModule ? relayModule.getRelayStatus() : {},
     dbPath: db.name,
     volumePath: process.env.RAILWAY_VOLUME_MOUNT_PATH || '(not set)',
     dbOnVolume: process.env.RAILWAY_VOLUME_MOUNT_PATH
