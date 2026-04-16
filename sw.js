@@ -1,4 +1,4 @@
-const CACHE_NAME = 'elshaddai-v7';
+const CACHE_NAME = 'elshaddai-v8';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
